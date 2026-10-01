@@ -25,6 +25,10 @@ struct Item {
     copy: String,
     /// Petit bonus de catégorie, pour départager les égalités
     weight: i32,
+    /// Source de la palette (désactivable dans les réglages) : « apps », « settings »…
+    source: &'static str,
+    /// Module de Toolbox dont dépend l'élément (masqué si le module est désactivé)
+    module: Option<&'static str>,
 }
 
 // ───────────────────────────── Applications (menu Démarrer) ─────────────────────────────
@@ -175,6 +179,8 @@ fn fixed_items() -> Vec<Item> {
             action: format!("uri:{uri}"),
             copy: uri.to_string(),
             weight: 0,
+            source: "settings",
+            module: None,
         });
     }
     for (name, cmd, kw) in TOOLS {
@@ -186,6 +192,8 @@ fn fixed_items() -> Vec<Item> {
             action: format!("run:{cmd}"),
             copy: cmd.to_string(),
             weight: 5,
+            source: "tools",
+            module: None,
         });
     }
     for (id, name, kw, confirm) in SYSTEM {
@@ -197,6 +205,8 @@ fn fixed_items() -> Vec<Item> {
             action: format!("system:{id}"),
             copy: String::new(),
             weight: 0,
+            source: "system",
+            module: None,
         });
     }
     v.push(Item {
@@ -207,6 +217,8 @@ fn fixed_items() -> Vec<Item> {
         action: "pick".into(),
         copy: String::new(),
         weight: 10,
+            source: "toolbox",
+            module: Some("color"),
     });
     for (id, name, kw) in PAGES {
         v.push(Item {
@@ -217,6 +229,8 @@ fn fixed_items() -> Vec<Item> {
             action: format!("page:{id}"),
             copy: String::new(),
             weight: 0,
+            source: "toolbox",
+            module: Some(id),
         });
     }
     v
@@ -233,6 +247,8 @@ fn dynamic_items(settings: &Settings, projects: &[crate::projects::Project]) -> 
             action: format!("app:{}", a.id),
             copy: String::new(),
             weight: 20,
+            source: "apps",
+            module: None,
         });
     }
     let openers = crate::launcher::openers();
@@ -246,6 +262,8 @@ fn dynamic_items(settings: &Settings, projects: &[crate::projects::Project]) -> 
             action: format!("project:{}|{}", p.editor, p.path),
             copy: p.path.clone(),
             weight: 15,
+            source: "projects",
+            module: Some("projects"),
         });
     }
     for f in &settings.folder_shortcuts {
@@ -258,6 +276,8 @@ fn dynamic_items(settings: &Settings, projects: &[crate::projects::Project]) -> 
             action: format!("openwith:{}|{}", f.open_with, f.path),
             copy: f.path.clone(),
             weight: 15,
+            source: "folders",
+            module: Some("folders"),
         });
     }
     v
@@ -370,6 +390,11 @@ fn to_result(item: Item) -> ConvResult {
     }
 }
 
+/// L'élément est-il autorisé par les réglages (source et module actifs) ?
+fn allowed(it: &Item, settings: &Settings) -> bool {
+    settings.source_on(it.source) && it.module.map_or(true, |m| settings.module_on(m))
+}
+
 /// Résultats de recherche pour la palette.
 pub fn search(q: &str, settings: &Settings, projects: &[crate::projects::Project]) -> Vec<ConvResult> {
     refresh_apps();
@@ -380,6 +405,7 @@ pub fn search(q: &str, settings: &Settings, projects: &[crate::projects::Project
     let mut scored: Vec<(i32, i32, Item)> = fixed_items()
         .into_iter()
         .chain(dynamic_items(settings, projects))
+        .filter(|it| allowed(it, settings))
         .filter_map(|it| {
             let base = score(&it, &q)?;
             Some((base, base + it.weight + usage_bonus(&settings.launch_counts, &it.action), it))
@@ -410,6 +436,7 @@ pub fn home(settings: &Settings, projects: &[crate::projects::Project]) -> Vec<C
     let mut items: Vec<(u32, Item)> = fixed_items()
         .into_iter()
         .chain(dynamic_items(settings, projects))
+        .filter(|it| allowed(it, settings))
         .filter_map(|it| counts.get(&it.action).map(|&n| (n, it)))
         .collect();
     items.sort_by(|a, b| b.0.cmp(&a.0));

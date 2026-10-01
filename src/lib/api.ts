@@ -20,6 +20,8 @@ export type Settings = {
   clean_folder_names: string[];
   clean_roots: string[];
   folder_shortcuts: FolderShortcut[];
+  disabled_modules: string[];
+  palette_disabled: string[];
   project_roots: string[];
   project_favorites: string[];
   project_opened: Record<string, number>;

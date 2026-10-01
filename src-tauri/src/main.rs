@@ -56,11 +56,11 @@ fn toggle_palette(app: &AppHandle) {
 
 /// Tous les raccourcis globaux des réglages, avec ce qu'ils déclenchent (pour les messages d'erreur).
 fn shortcut_list(s: &Settings) -> Vec<(String, String)> {
-    let mut list = vec![
-        (s.palette_shortcut.clone(), "le convertisseur".to_string()),
-        (s.picker_shortcut.clone(), "la pipette".to_string()),
-    ];
-    for f in &s.folder_shortcuts {
+    let mut list = vec![(s.palette_shortcut.clone(), "la palette".to_string())];
+    if s.module_on("color") {
+        list.push((s.picker_shortcut.clone(), "la pipette".to_string()));
+    }
+    for f in s.folder_shortcuts.iter().filter(|_| s.module_on("folders")) {
         if !f.shortcut.trim().is_empty() {
             list.push((f.shortcut.clone(), format!("le dossier « {} »", f.name)));
         }
@@ -90,7 +90,7 @@ fn register_shortcuts(app: &AppHandle, s: &Settings) -> Result<(), String> {
 fn on_shortcut(app: &AppHandle, shortcut: &Shortcut) {
     let s = app.state::<AppState>().settings.lock().unwrap().clone();
     let is = |key: &str| key.parse::<Shortcut>().is_ok_and(|k| &k == shortcut);
-    if is(&s.picker_shortcut) {
+    if s.module_on("color") && is(&s.picker_shortcut) {
         start_color_pick(app, false);
     } else if let Some(f) = s.folder_shortcuts.iter().find(|f| !f.shortcut.is_empty() && is(&f.shortcut)) {
         if let Err(e) = launcher::open_with(&f.open_with, &f.path) {
@@ -104,7 +104,8 @@ fn on_shortcut(app: &AppHandle, shortcut: &Shortcut) {
 /// Lance la pipette. Si `from_main`, la fenêtre principale est cachée pendant la sélection
 /// pour laisser voir ce qu'il y a derrière, puis réaffichée.
 fn start_color_pick(app: &AppHandle, from_main: bool) {
-    if colorpicker::is_picking() {
+    let enabled = app.state::<AppState>().settings.lock().unwrap().module_on("color");
+    if !enabled || colorpicker::is_picking() {
         return;
     }
     let app = app.clone();
@@ -157,18 +158,22 @@ fn start_color_pick(app: &AppHandle, from_main: bool) {
     });
 }
 
-fn build_tray(app: &AppHandle) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "open", "Ouvrir Toolbox", true, None::<&str>)?;
-    let palette = MenuItem::with_id(app, "palette", "Palette de recherche", true, None::<&str>)?;
-    let picker = MenuItem::with_id(app, "picker", "Pipette de couleur", true, None::<&str>)?;
-    let separator = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "Quitter", true, None::<&str>)?;
+/// Menu de l'icône : la pipette n'y figure que si son module est actif.
+fn tray_menu(app: &AppHandle, s: &Settings) -> tauri::Result<Menu<tauri::Wry>> {
     let menu = Menu::new(app)?;
-    menu.append(&open)?;
-    menu.append(&palette)?;
-    menu.append(&picker)?;
-    menu.append(&separator)?;
-    menu.append(&quit)?;
+    menu.append(&MenuItem::with_id(app, "open", "Ouvrir Toolbox", true, None::<&str>)?)?;
+    menu.append(&MenuItem::with_id(app, "palette", "Palette de recherche", true, None::<&str>)?)?;
+    if s.module_on("color") {
+        menu.append(&MenuItem::with_id(app, "picker", "Pipette de couleur", true, None::<&str>)?)?;
+    }
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
+    menu.append(&MenuItem::with_id(app, "quit", "Quitter", true, None::<&str>)?)?;
+    Ok(menu)
+}
+
+fn build_tray(app: &AppHandle) -> tauri::Result<()> {
+    let settings = app.state::<AppState>().settings.lock().unwrap().clone();
+    let menu = tray_menu(app, &settings)?;
 
     let mut tray = TrayIconBuilder::with_id("toolbox")
         .tooltip("Toolbox")
@@ -231,14 +236,19 @@ fn save_settings(app: AppHandle, state: State<'_, AppState>, mut settings: Setti
     settings.launch_counts = old.launch_counts.clone();
     settings.shell_history = old.shell_history.clone();
     if let Some(tray) = app.tray_by_id("toolbox") {
-        if old.monitor_tooltip && !settings.monitor_tooltip {
+        if old.tooltip_active() && !settings.tooltip_active() {
             let _ = tray.set_tooltip(Some("Toolbox"));
         }
-        if old.monitor_tray_icon && !settings.monitor_tray_icon {
+        if old.gauge_active() && !settings.gauge_active() {
             let _ = tray.set_icon(app.default_window_icon().cloned());
         }
+        if old.module_on("color") != settings.module_on("color") {
+            if let Ok(menu) = tray_menu(&app, &settings) {
+                let _ = tray.set_menu(Some(menu));
+            }
+        }
     }
-    expander::configure(settings.expander_enabled, &settings.snippets);
+    expander::configure(settings.expander_active(), &settings.snippets);
     settings::save(&state.path, &settings)?;
     *state.settings.lock().unwrap() = settings;
     Ok(())
@@ -246,26 +256,31 @@ fn save_settings(app: AppHandle, state: State<'_, AppState>, mut settings: Setti
 
 #[tauri::command]
 async fn convert(state: State<'_, AppState>, input: String) -> Result<Vec<converter::ConvResult>, String> {
+    let settings = state.settings.lock().unwrap().clone();
     // « >ipconfig » : une commande, rien d'autre.
-    if input.trim_start().starts_with('>') {
-        let history = state.settings.lock().unwrap().shell_history.clone();
-        return Ok(search::shell(&input, &history));
+    if settings.source_on("shell") && input.trim_start().starts_with('>') {
+        return Ok(search::shell(&input, &settings.shell_history));
     }
     // « gh tauri » : recherche web directe.
-    if let Some(web) = search::web(&input) {
-        return Ok(web);
+    if settings.source_on("web") {
+        if let Some(web) = search::web(&input) {
+            return Ok(web);
+        }
     }
-    let mut out = converter::convert(&input).await;
     // « kill 3000 » / « port 3000 » : la commande suffit, pas de recherche d'applis.
-    if out.iter().any(|r| r.action.starts_with("kill:") || r.title.starts_with("Port ")) {
-        return Ok(out);
+    if settings.module_on("ports") {
+        if let Some(list) = converter::port_commands(input.trim()) {
+            return Ok(list);
+        }
     }
-    let settings = state.settings.lock().unwrap().clone();
+    let mut out = if settings.source_on("calc") { converter::convert(&input).await } else { Vec::new() };
     let projects = projects::load_cache(&projects_cache(&state));
     out.extend(search::search(&input, &settings, &projects));
     // En dernier recours, comme le menu Démarrer : chercher sur le web.
-    if let Some(web) = search::web_fallback(&input) {
-        out.push(web);
+    if settings.source_on("web") {
+        if let Some(web) = search::web_fallback(&input) {
+            out.push(web);
+        }
     }
     Ok(out)
 }
@@ -724,7 +739,7 @@ fn main() {
             let settings = settings::load(&path);
 
             expander::start();
-            expander::configure(settings.expander_enabled, &settings.snippets);
+            expander::configure(settings.expander_active(), &settings.snippets);
             let initial = settings.clone();
 
             app.manage(AppState { settings: Mutex::new(settings), path });
@@ -745,7 +760,7 @@ fn main() {
                 let (tooltip, gauge) = {
                     let s = handle.state::<AppState>();
                     let s = s.settings.lock().unwrap();
-                    (s.monitor_tooltip, s.monitor_tray_icon)
+                    (s.tooltip_active(), s.gauge_active())
                 };
                 if let Some(tray) = handle.tray_by_id("toolbox") {
                     if tooltip {

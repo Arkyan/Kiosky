@@ -69,6 +69,32 @@ pub struct Settings {
     pub launch_counts: HashMap<String, u32>,
     /// Dernières commandes « > » de la palette, la plus récente en premier
     pub shell_history: Vec<String>,
+    /// Modules désactivés : cachés de l'interface et de la palette, sans travail en arrière-plan
+    pub disabled_modules: Vec<String>,
+    /// Sources de la palette désactivées (« apps », « web », « shell »…)
+    pub palette_disabled: Vec<String>,
+}
+
+impl Settings {
+    pub fn module_on(&self, id: &str) -> bool {
+        !self.disabled_modules.iter().any(|m| m == id)
+    }
+
+    pub fn source_on(&self, id: &str) -> bool {
+        !self.palette_disabled.iter().any(|m| m == id)
+    }
+
+    pub fn expander_active(&self) -> bool {
+        self.expander_enabled && self.module_on("expander")
+    }
+
+    pub fn tooltip_active(&self) -> bool {
+        self.monitor_tooltip && self.module_on("monitor")
+    }
+
+    pub fn gauge_active(&self) -> bool {
+        self.monitor_tray_icon && self.module_on("monitor")
+    }
 }
 
 impl Default for Settings {
@@ -99,6 +125,8 @@ impl Default for Settings {
             project_opened: HashMap::new(),
             launch_counts: HashMap::new(),
             shell_history: vec![],
+            disabled_modules: vec![],
+            palette_disabled: vec![],
         }
     }
 }

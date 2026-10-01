@@ -3,6 +3,7 @@
   import { listen } from "@tauri-apps/api/event";
   import Icon from "./lib/Icon.svelte";
   import { store, loadSettings } from "./lib/settings.svelte";
+  import { MODULES } from "./lib/modules";
   import ConverterPage from "./pages/ConverterPage.svelte";
   import ExpanderPage from "./pages/ExpanderPage.svelte";
   import MixerPage from "./pages/MixerPage.svelte";
@@ -32,22 +33,22 @@
     | "containers"
     | "settings";
 
-  const nav: { id: Page; label: string; icon: string; group?: string }[] = [
-    { id: "converter", label: "Convertisseur", icon: "calc", group: "Outils" },
-    { id: "expander", label: "Expanseur de texte", icon: "keyboard" },
-    { id: "color", label: "Pipette", icon: "pipette" },
-    { id: "mixer", label: "Volume", icon: "volume" },
-    { id: "projects", label: "Projets", icon: "code", group: "Dev" },
-    { id: "folders", label: "Dossiers", icon: "folder" },
-    { id: "env", label: "Variables", icon: "variable" },
-    { id: "containers", label: "Conteneurs", icon: "box" },
-    { id: "monitor", label: "Moniteur", icon: "activity", group: "Système" },
-    { id: "startup", label: "Démarrage", icon: "power" },
-    { id: "cleaner", label: "Nettoyage", icon: "broom" },
-    { id: "ports", label: "Ports", icon: "plug" },
-  ];
+  // Modules désactivés dans les réglages : retirés de la barre latérale.
+  const nav = $derived(
+    MODULES.filter((m) => m.id === "converter" || !store.s?.disabled_modules.includes(m.id)) as {
+      id: Page;
+      label: string;
+      icon: string;
+      group: string;
+    }[],
+  );
 
   let page = $state<Page>("converter");
+
+  // La page affichée vient d'être désactivée : retour au convertisseur.
+  $effect(() => {
+    if (page !== "settings" && !nav.some((n) => n.id === page)) page = "converter";
+  });
   let loadError = $state("");
 
   onMount(() => {
@@ -76,8 +77,8 @@
     </div>
 
     <nav>
-      {#each nav as item (item.id)}
-        {#if item.group}<div class="group">{item.group}</div>{/if}
+      {#each nav as item, i (item.id)}
+        {#if i === 0 || nav[i - 1].group !== item.group}<div class="group">{item.group}</div>{/if}
         <button class="nav-item" class:active={page === item.id} onclick={() => (page = item.id)}>
           <Icon name={item.icon} />
           <span>{item.label}</span>

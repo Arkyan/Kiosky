@@ -5,6 +5,13 @@
   import Toggle from "../lib/Toggle.svelte";
   import { api } from "../lib/api";
   import { store, saveSettings } from "../lib/settings.svelte";
+  import { MODULES, PALETTE_SOURCES } from "../lib/modules";
+
+  function toggleIn(list: "disabled_modules" | "palette_disabled", id: string, enabled: boolean) {
+    const cur = s[list].filter((x) => x !== id);
+    s[list] = enabled ? cur : [...cur, id];
+    saveSettings(0);
+  }
 
   const s = $derived(store.s!);
 
@@ -118,6 +125,38 @@
   </div>
 </div>
 
+<h2>Modules</h2>
+<p class="small muted intro">Un module désactivé disparaît de la barre latérale et de la palette, et arrête ce qu'il fait en arrière-plan.</p>
+<div class="card toggles">
+  {#each MODULES.filter((m) => m.id !== "converter") as m (m.id)}
+    {@const on = !s.disabled_modules.includes(m.id)}
+    <div class="trow" class:off={!on}>
+      <div class="tico"><Icon name={m.icon} size={16} /></div>
+      <div class="grow">
+        <div class="strong">{m.label}</div>
+        <div class="small muted">{m.description}</div>
+      </div>
+      <Toggle checked={on} label={`Activer ${m.label}`} onchange={(v) => toggleIn("disabled_modules", m.id, v)} />
+    </div>
+  {/each}
+</div>
+
+<h2>Palette</h2>
+<p class="small muted intro">Ce que la palette cherche quand tu tapes quelque chose.</p>
+<div class="card toggles">
+  {#each PALETTE_SOURCES as src (src.id)}
+    {@const on = !s.palette_disabled.includes(src.id)}
+    <div class="trow" class:off={!on}>
+      <div class="tico"><Icon name={src.icon} size={16} /></div>
+      <div class="grow">
+        <div class="strong">{src.label}</div>
+        <div class="small muted">{src.description}</div>
+      </div>
+      <Toggle checked={on} label={`Chercher : ${src.label}`} onchange={(v) => toggleIn("palette_disabled", src.id, v)} />
+    </div>
+  {/each}
+</div>
+
 <h2>À propos</h2>
 <div class="card group">
   <div class="row">
@@ -136,6 +175,39 @@
 </div>
 
 <style>
+  .intro {
+    margin: -6px 0 10px;
+  }
+  .toggles {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    overflow: hidden;
+  }
+  .trow {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--stroke);
+    transition: opacity 0.15s;
+  }
+  .trow:nth-child(odd) {
+    border-right: 1px solid var(--stroke);
+  }
+  .trow.off .tico,
+  .trow.off .grow {
+    opacity: 0.5;
+  }
+  .tico {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: var(--fill-hover);
+    color: var(--text-2);
+  }
   .group {
     overflow: hidden;
   }

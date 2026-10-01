@@ -39,9 +39,6 @@ pub async fn convert(input: &str) -> Vec<ConvResult> {
     if q.is_empty() {
         return vec![];
     }
-    if let Some(list) = port_commands(q) {
-        return list;
-    }
     let mut out = Vec::new();
 
     if calc::looks_like_math(q) {
@@ -78,7 +75,7 @@ pub async fn convert(input: &str) -> Vec<ConvResult> {
 // ───────────────────────────── Ports ─────────────────────────────
 
 /// « kill 3000 », « port 5173 », « :8080 » : qui écoute sur ce port, avec de quoi l'arrêter ou l'ouvrir.
-fn port_commands(q: &str) -> Option<Vec<ConvResult>> {
+pub fn port_commands(q: &str) -> Option<Vec<ConvResult>> {
     let lower = q.to_lowercase();
     let (verb, rest) = match lower.strip_prefix(':') {
         Some(r) => ("port", r.trim()),
