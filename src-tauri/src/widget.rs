@@ -2,13 +2,16 @@
 //! masquage automatique quand une application passe en plein écran.
 
 use serde::Serialize;
+use std::sync::atomic::{AtomicIsize, Ordering};
+use std::time::Duration;
 use windows::core::w;
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
 use windows::Win32::UI::WindowsAndMessaging::{
-    FindWindowExW, FindWindowW, GetClassNameW, GetForegroundWindow, GetWindowRect, SetWindowPos, HWND_TOPMOST,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    FindWindowExW, FindWindowW, GetClassNameW, GetForegroundWindow, GetWindow, GetWindowLongPtrW, GetWindowRect,
+    IsWindowVisible, SetWindowPos, GWL_EXSTYLE, GW_HWNDPREV, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    WS_EX_TOPMOST,
 };
 
 /// Écart avec les bords de la barre des tâches, en pixels physiques
@@ -60,6 +63,59 @@ pub fn keep_on_top(raw: isize) {
     unsafe {
         let _ = SetWindowPos(HWND(raw as _), HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     }
+}
+
+/// Fenêtre de la barre flottante à garder au-dessus de la barre des tâches (0 : aucune).
+static GUARDED: AtomicIsize = AtomicIsize::new(0);
+
+pub fn guard(raw: Option<isize>) {
+    GUARDED.store(raw.unwrap_or(0), Ordering::Relaxed);
+}
+
+/// La barre des tâches (principale ou d'un second écran) est-elle passée au-dessus de nous ?
+fn taskbar_above(own: HWND) -> bool {
+    unsafe {
+        let mut h = GetWindow(own, GW_HWNDPREV).unwrap_or_default();
+        // Les fenêtres au-dessus de nous, de proche en proche (bande « toujours au premier plan »).
+        for _ in 0..256 {
+            if h.0.is_null() {
+                return false;
+            }
+            let mut class = [0u16; 32];
+            let n = GetClassNameW(h, &mut class) as usize;
+            let name = String::from_utf16_lossy(&class[..n]);
+            if name == "Shell_TrayWnd" || name == "Shell_SecondaryTrayWnd" {
+                return true;
+            }
+            h = GetWindow(h, GW_HWNDPREV).unwrap_or_default();
+        }
+        false
+    }
+}
+
+/// Gardien : Windows remonte la barre des tâches à chaque clic sur une appli ou sur la barre
+/// elle-même. Toutes les 40 ms, si elle nous recouvre, on repasse devant, sans prendre le focus.
+/// On ne réagit qu'à la barre des tâches : pas de bras de fer avec le menu Démarrer ou une autre
+/// fenêtre « toujours au premier plan ».
+pub fn start_guard() {
+    std::thread::spawn(|| loop {
+        std::thread::sleep(Duration::from_millis(40));
+        let raw = GUARDED.load(Ordering::Relaxed);
+        if raw == 0 {
+            continue;
+        }
+        let own = HWND(raw as _);
+        unsafe {
+            if !IsWindowVisible(own).as_bool() {
+                continue;
+            }
+            // Statut « toujours au premier plan » perdu : n'importe quelle appli passerait devant.
+            let lost_topmost = GetWindowLongPtrW(own, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST.0 == 0;
+            if lost_topmost || taskbar_above(own) {
+                keep_on_top(raw);
+            }
+        }
+    });
 }
 
 /// Une application occupe-t-elle tout l'écran (jeu, vidéo) ? Le bureau lui-même ne compte pas.

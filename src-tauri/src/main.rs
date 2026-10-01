@@ -203,6 +203,7 @@ fn apply_widget(app: &AppHandle, s: &Settings) {
 fn widget_tick(app: &AppHandle) {
     let enabled = app.state::<AppState>().settings.lock().unwrap().widget_enabled;
     let (Some(w), Some(raw)) = (app.get_webview_window("widget"), widget_raw(app)) else { return };
+    widget::guard(enabled.then_some(raw));
     if !enabled {
         return;
     }
@@ -216,7 +217,6 @@ fn widget_tick(app: &AppHandle) {
     if WIDGET_HIDDEN_FULLSCREEN.swap(false, Ordering::Relaxed) {
         let _ = w.show();
     }
-    widget::keep_on_top(raw);
 }
 
 /// Taille voulue par l'interface (pixels CSS), puis placement selon le mode, puis affichage.
@@ -245,6 +245,7 @@ fn fit_widget(app: AppHandle, state: State<'_, AppState>, width: f64, height: f6
     }
     if let Some(raw) = widget_raw(&app) {
         widget::keep_on_top(raw);
+        widget::guard(Some(raw));
     }
     Ok(())
 }
@@ -862,6 +863,7 @@ fn main() {
             }
             build_tray(app.handle())?;
             search::refresh_apps(); // liste des applis prête avant la première recherche
+            widget::start_guard();
 
             // La loupe de la pipette laisse passer la souris.
             if let Some(loupe) = app.get_webview_window("picker") {
