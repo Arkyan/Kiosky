@@ -38,6 +38,24 @@ export type EnvVar = { name: string; value: string; expand: boolean };
 export type EnvState = { user: EnvVar[]; machine: EnvVar[]; is_admin: boolean; undo: string | null };
 export type PathCheck = { entry: string; expanded: string; exists: boolean };
 export type ShellOutput = { output: string; code: number; ms: number; timed_out: boolean };
+export type Distro = { name: string; running: boolean; version: number; default: boolean };
+export type WslState = { installed: boolean; distros: Distro[] };
+export type Container = {
+  id: string;
+  name: string;
+  image: string;
+  running: boolean;
+  status: string;
+  ports: number[];
+  project: string | null;
+};
+export type DockerState = {
+  installed: boolean;
+  running: boolean;
+  containers: Container[];
+  desktop_path: string | null;
+  error: string | null;
+};
 export type ScanProgress = { dirs: number; found: number };
 export type FolderShortcut = { name: string; path: string; shortcut: string; open_with: string };
 export type KnownFolder = { name: string; path: string };
@@ -166,6 +184,12 @@ export const api = {
   openUrl: (url: string) => invoke<void>("open_url", { url }),
   runAction: (action: string) => invoke<void>("run_action", { action }),
   paletteHome: () => invoke<ConvResult[]>("palette_home"),
+  getWsl: () => invoke<WslState>("get_wsl"),
+  wslAction: (name: string, action: string) => invoke<void>("wsl_action", { name, action }),
+  getDocker: () => invoke<DockerState>("get_docker"),
+  dockerAction: (ids: string[], action: string) => invoke<void>("docker_action", { ids, action }),
+  dockerLogs: (id: string) => invoke<string>("docker_logs", { id }),
+  startDockerDesktop: () => invoke<void>("start_docker_desktop"),
   runShell: (cmd: string) => invoke<ShellOutput>("run_shell", { cmd }),
   getIcons: (actions: string[]) => invoke<Record<string, string>>("get_icons", { actions }),
 

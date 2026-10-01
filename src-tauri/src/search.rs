@@ -160,6 +160,7 @@ const PAGES: &[(&str, &str, &str)] = &[
     ("projects", "Projets", "projets code git"),
     ("folders", "Dossiers", "raccourcis dossiers favoris"),
     ("env", "Variables d'environnement", "path env variables"),
+    ("containers", "Conteneurs", "docker wsl ubuntu linux conteneurs"),
     ("settings", "Réglages de Toolbox", "réglages préférences raccourci"),
 ];
 

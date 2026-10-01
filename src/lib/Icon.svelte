@@ -39,6 +39,9 @@
     up_small: '<path d="m7 14 5-5 5 5"/>',
     down_small: '<path d="m7 10 5 5 5-5"/>',
     undo: '<path d="M9 14 4.5 9.5 9 5"/><path d="M4.5 9.5H14a5.5 5.5 0 0 1 0 11h-3"/>',
+    box: '<path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/>',
+    play: '<path d="M8 5.5v13l10-6.5z"/>',
+    log: '<path d="M6 3.5h9l3.5 3.5v13.5H6z"/><path d="M9 11h6M9 14.5h6M9 18h4"/>',
   };
 </script>
 

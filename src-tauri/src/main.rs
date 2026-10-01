@@ -5,6 +5,7 @@ mod audio;
 mod calc;
 mod cleaner;
 mod colorpicker;
+mod containers;
 mod converter;
 mod envvars;
 mod expander;
@@ -522,6 +523,36 @@ async fn check_paths(entries: Vec<String>) -> Result<Vec<envvars::PathCheck>, St
 }
 
 #[tauri::command]
+async fn get_wsl() -> Result<containers::WslState, String> {
+    blocking(|| Ok(containers::wsl())).await
+}
+
+#[tauri::command]
+async fn wsl_action(name: String, action: String) -> Result<(), String> {
+    blocking(move || containers::wsl_action(&name, &action)).await
+}
+
+#[tauri::command]
+async fn get_docker() -> Result<containers::DockerState, String> {
+    blocking(|| Ok(containers::docker())).await
+}
+
+#[tauri::command]
+async fn docker_action(ids: Vec<String>, action: String) -> Result<(), String> {
+    blocking(move || containers::docker_action(&ids, &action)).await
+}
+
+#[tauri::command]
+async fn docker_logs(id: String) -> Result<String, String> {
+    blocking(move || containers::docker_logs(&id)).await
+}
+
+#[tauri::command]
+fn start_docker_desktop() -> Result<(), String> {
+    containers::start_desktop()
+}
+
+#[tauri::command]
 fn get_known_folders() -> Vec<launcher::KnownFolder> {
     launcher::known_folders()
 }
@@ -772,6 +803,12 @@ fn main() {
             open_url,
             get_openers,
             get_known_folders,
+            get_wsl,
+            wsl_action,
+            get_docker,
+            docker_action,
+            docker_logs,
+            start_docker_desktop,
             get_env,
             set_env,
             delete_env,
