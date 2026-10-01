@@ -358,8 +358,8 @@ fn save_settings(app: AppHandle, state: State<'_, AppState>, mut settings: Setti
     settings.widget_pos = old.widget_pos;
     expander::configure(settings.expander_active(), &settings.snippets);
     settings::save(&state.path, &settings)?;
-    let widget_changed = (old.widget_enabled, &old.widget_items, &old.widget_mode, old.widget_vertical, old.widget_opacity)
-        != (settings.widget_enabled, &settings.widget_items, &settings.widget_mode, settings.widget_vertical, settings.widget_opacity);
+    let widget_changed = (old.widget_enabled, &old.widget_items, &old.widget_order, &old.widget_mode, old.widget_vertical, old.widget_opacity)
+        != (settings.widget_enabled, &settings.widget_items, &settings.widget_order, &settings.widget_mode, settings.widget_vertical, settings.widget_opacity);
     *state.settings.lock().unwrap() = settings.clone();
     if widget_changed {
         apply_widget(&app, &settings);

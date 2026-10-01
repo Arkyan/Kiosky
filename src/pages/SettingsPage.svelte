@@ -19,6 +19,13 @@
     { id: "git", label: "Projet favori (Git)", icon: "branch" },
   ];
 
+  // Ordre stable de tous les éléments : cocher ou décocher ne déplace rien, seules les flèches le font.
+  const widgetOrder = $derived(
+    [...s.widget_order, ...WIDGET_ITEMS.map((w) => w.id).filter((id) => !s.widget_order.includes(id))]
+      .map((id) => WIDGET_ITEMS.find((w) => w.id === id))
+      .filter((w) => !!w) as { id: string; label: string; icon: string }[],
+  );
+
   function toggleWidgetItem(id: string, on: boolean) {
     const cur = s.widget_items.filter((x) => x !== id);
     s.widget_items = on ? [...cur, id] : cur;
@@ -26,20 +33,14 @@
   }
 
   function moveWidgetItem(id: string, d: number) {
-    const list = [...s.widget_items];
+    const list = widgetOrder.map((w) => w.id);
     const i = list.indexOf(id);
     const j = i + d;
-    if (i < 0 || j < 0 || j >= list.length) return;
+    if (j < 0 || j >= list.length) return;
     [list[i], list[j]] = [list[j], list[i]];
-    s.widget_items = list;
+    s.widget_order = list;
     saveSettings(0);
   }
-
-  // Éléments cochés dans l'ordre choisi, puis les autres.
-  const widgetOrder = $derived([
-    ...s.widget_items.map((id) => WIDGET_ITEMS.find((w) => w.id === id)).filter((w) => !!w),
-    ...WIDGET_ITEMS.filter((w) => !s.widget_items.includes(w.id)),
-  ] as { id: string; label: string; icon: string }[]);
 
   function toggleIn(list: "disabled_modules" | "palette_disabled", id: string, enabled: boolean) {
     const cur = s[list].filter((x) => x !== id);
@@ -170,14 +171,12 @@
     </div>
     <Toggle checked={s.widget_enabled} label="Afficher la barre flottante" onchange={(v) => { s.widget_enabled = v; saveSettings(0); }} />
   </div>
-  {#if s.widget_enabled}
+  <div class="wconf" class:disabled={!s.widget_enabled}>
     <div class="row">
       <div class="ico"><Icon name="folder" size={18} /></div>
       <div class="grow">
         <div class="strong">Position</div>
-        <div class="small muted">
-          {s.widget_mode === "free" ? "Déplace-la à la souris : sa place est retenue." : "Posée dans la barre des tâches, au-dessus d'elle."}
-        </div>
+        <div class="small muted">Sur la barre des tâches, ou libre : déplaçable à la souris, place retenue.</div>
       </div>
       <div class="seg-ctrl">
         <button class:active={s.widget_mode === "taskbar-left"} onclick={() => { s.widget_mode = "taskbar-left"; saveSettings(0); }}>Barre des tâches ◧</button>
@@ -185,13 +184,19 @@
         <button class:active={s.widget_mode === "free"} onclick={() => { s.widget_mode = "free"; saveSettings(0); }}>Libre</button>
       </div>
     </div>
-    {#if s.widget_mode === "free"}
-      <div class="row">
-        <div class="ico"><Icon name="settings" size={18} /></div>
-        <div class="grow"><div class="strong">Disposition verticale</div></div>
-        <Toggle checked={s.widget_vertical} label="Disposition verticale" onchange={(v) => { s.widget_vertical = v; saveSettings(0); }} />
+    <div class="row" class:dim={s.widget_mode !== "free"}>
+      <div class="ico"><Icon name="settings" size={18} /></div>
+      <div class="grow">
+        <div class="strong">Disposition verticale</div>
+        <div class="small muted">En position libre seulement.</div>
       </div>
-    {/if}
+      <Toggle
+        checked={s.widget_vertical}
+        disabled={s.widget_mode !== "free"}
+        label="Disposition verticale"
+        onchange={(v) => { s.widget_vertical = v; saveSettings(0); }}
+      />
+    </div>
     <div class="row">
       <div class="ico"><Icon name="sparkle" size={18} /></div>
       <div class="grow">
@@ -208,25 +213,24 @@
       <span class="small muted pct">{Math.round(s.widget_opacity * 100)} %</span>
     </div>
     <div class="witems">
-      {#each widgetOrder as w (w.id)}
+      <div class="small muted whead">Éléments affichés, de gauche à droite</div>
+      {#each widgetOrder as w, i (w.id)}
         {@const on = s.widget_items.includes(w.id)}
-        {@const i = s.widget_items.indexOf(w.id)}
         <div class="witem" class:off={!on}>
           <Toggle checked={on} label={w.label} onchange={(v) => toggleWidgetItem(w.id, v)} />
           <Icon name={w.icon} size={15} />
-          <span class="grow">{w.label}</span>
-          {#if on}
-            <button class="mini" title="Plus à gauche" disabled={i === 0} onclick={() => moveWidgetItem(w.id, -1)}><Icon name="up_small" size={14} /></button>
-            <button class="mini" title="Plus à droite" disabled={i === s.widget_items.length - 1} onclick={() => moveWidgetItem(w.id, 1)}><Icon name="down_small" size={14} /></button>
-          {/if}
+          <span class="grow">
+            {w.label}
+            {#if w.id === "git"}<span class="small muted"> · premier projet favori ⭐ de la page Projets</span>{/if}
+            {#if w.id === "battery"}<span class="small muted"> · masquée sur un PC fixe</span>{/if}
+          </span>
+          <button class="mini" title="Plus à gauche" disabled={i === 0} onclick={() => moveWidgetItem(w.id, -1)}><Icon name="up_small" size={14} /></button>
+          <button class="mini" title="Plus à droite" disabled={i === widgetOrder.length - 1} onclick={() => moveWidgetItem(w.id, 1)}><Icon name="down_small" size={14} /></button>
         </div>
       {/each}
     </div>
-  {/if}
+  </div>
 </div>
-{#if s.widget_enabled && s.widget_items.includes("git") && !s.project_favorites.length}
-  <p class="small muted intro2">Pour l'état Git, mets un projet en favori (⭐) dans la page Projets.</p>
-{/if}
 
 <h2>Modules</h2>
 <p class="small muted intro">Un module désactivé disparaît de la barre latérale et de la palette, et arrête ce qu'il fait en arrière-plan.</p>
@@ -312,11 +316,24 @@
     min-width: 40px;
     text-align: right;
   }
+  .wconf {
+    transition: opacity 0.15s;
+  }
+  .wconf.disabled {
+    opacity: 0.45;
+    pointer-events: none;
+  }
+  .row.dim .grow,
+  .row.dim .ico {
+    opacity: 0.5;
+  }
   .witems {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0 16px;
-    padding: 8px 18px 12px;
+    display: flex;
+    flex-direction: column;
+    padding: 10px 18px 12px;
+  }
+  .whead {
+    margin-bottom: 4px;
   }
   .witem {
     display: flex;

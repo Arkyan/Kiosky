@@ -24,6 +24,7 @@ export type Settings = {
   palette_disabled: string[];
   widget_enabled: boolean;
   widget_items: string[];
+  widget_order: string[];
   widget_mode: "free" | "taskbar-left" | "taskbar-right";
   widget_pos: [number, number] | null;
   widget_vertical: boolean;

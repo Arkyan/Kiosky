@@ -3,7 +3,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import Icon from "./lib/Icon.svelte";
-  import { api, fmtBytes, type Sample, type Settings } from "./lib/api";
+  import { api, type Sample, type Settings } from "./lib/api";
 
   // Barre flottante : fenêtre transparente qui s'ajuste à son contenu (Rust la place et l'affiche).
 
@@ -17,7 +17,12 @@
   let taskbarH = $state<number | null>(null);
   let bar: HTMLDivElement;
 
-  const items = $derived(settings?.widget_items ?? []);
+  /** Éléments cochés, dans l'ordre réglé */
+  const items = $derived.by(() => {
+    if (!settings) return [];
+    const on = settings.widget_items;
+    return [...settings.widget_order.filter((id) => on.includes(id)), ...on.filter((id) => !settings!.widget_order.includes(id))];
+  });
   const has = (id: string) => items.includes(id);
   const onTaskbar = $derived(settings?.widget_mode !== "free");
   const vertical = $derived(!onTaskbar && !!settings?.widget_vertical);
@@ -107,8 +112,18 @@
   const level = (v: number) => (v >= 90 ? "bad" : v >= 70 ? "warn" : "");
   const time = $derived(now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }));
   const date = $derived(now.toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" }));
-  /** Débit compact : « 1,2 Mo » plutôt que « 1,2 Mo/s » pour gagner de la place */
-  const rate = (b: number) => fmtBytes(b).replace(" ", " ");
+  /** Débit compact et de longueur bornée : « 980 Ko », « 9,8 Mo », « 98 Mo » (jamais « 1 023 Ko ») */
+  function rate(b: number): string {
+    const units = ["o", "Ko", "Mo", "Go"];
+    let v = b;
+    let i = 0;
+    while (v >= 1000 && i < units.length - 1) {
+      v /= 1024;
+      i++;
+    }
+    const txt = v.toLocaleString("fr-FR", { maximumFractionDigits: v < 10 && i > 0 ? 1 : 0, useGrouping: false });
+    return `${txt} ${units[i]}`;
+  }
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -129,44 +144,47 @@
       <span class="item {level(sample?.cpu ?? 0)}">
         <span class="lbl">CPU</span>
         <span class="gauge"><span style:height={`${Math.min(100, sample?.cpu ?? 0)}%`}></span></span>
-        <span class="val">{sample ? pct(sample.cpu) : "…"}</span>
+        <span class="val w-pct">{sample ? pct(sample.cpu) : "…"}</span>
       </span>
     {:else if id === "ram"}
       <span class="item {level(memPct)}">
         <span class="lbl">RAM</span>
         <span class="gauge"><span style:height={`${memPct}%`}></span></span>
-        <span class="val">{sample ? pct(memPct) : "…"}</span>
+        <span class="val w-pct">{sample ? pct(memPct) : "…"}</span>
       </span>
     {:else if id === "net"}
       <span class="item net">
-        <span class="down"><Icon name="down" size={11} />{sample ? rate(sample.net_down) : "…"}</span>
-        <span class="up"><Icon name="up" size={11} />{sample ? rate(sample.net_up) : "…"}</span>
+        <span class="down"><Icon name="down" size={11} /><span class="w-rate">{sample ? rate(sample.net_down) : "…"}</span></span>
+        <span class="up"><Icon name="up" size={11} /><span class="w-rate">{sample ? rate(sample.net_up) : "…"}</span></span>
       </span>
     {:else if id === "time"}
-      <span class="item"><span class="val big">{time}</span></span>
+      <span class="item"><span class="val big w-time">{time}</span></span>
     {:else if id === "date"}
-      <span class="item"><span class="val">{date}</span></span>
+      <span class="item"><span class="val w-date">{date}</span></span>
     {:else if id === "battery" && battery?.present}
       <span class="item {battery.percent <= 15 && !battery.charging ? 'bad' : ''}">
         <Icon name={battery.charging ? "bolt" : "power"} size={12} />
-        <span class="val">{battery.percent} %</span>
+        <span class="val w-pct">{battery.percent} %</span>
       </span>
     {:else if id === "ports"}
       <span class="item" title="Serveurs locaux en écoute">
         <Icon name="plug" size={12} />
-        <span class="val">{devPorts.length ? devPorts.slice(0, 4).join(" · ") + (devPorts.length > 4 ? "…" : "") : "aucun"}</span>
+        <span class="val w-ports" title={devPorts.join(", ")}>{devPorts.length ? devPorts.join(" · ") : "aucun"}</span>
       </span>
-    {:else if id === "docker" && docker}
+    {:else if id === "docker"}
       <span class="item" title="Conteneurs Docker en cours">
         <Icon name="box" size={12} />
-        <span class="val">{docker.up ? `${docker.running}/${docker.total}` : "arrêté"}</span>
+        <span class="val w-docker">{!docker ? "…" : docker.up ? `${docker.running}/${docker.total}` : "arrêté"}</span>
       </span>
     {:else if id === "git" && git}
       <span class="item" title="Projet favori">
         <Icon name="branch" size={12} />
-        <span class="val">{git.name} · {git.branch}</span>
-        {#if git.changes}<span class="dirty">●{git.changes}</span>{/if}
-        {#if git.ahead}<span class="ahead">↑{git.ahead}</span>{/if}
+        <span class="val w-git" title={`${git.name} · ${git.branch}`}>{git.name} · {git.branch}</span>
+        <span class="w-gitstate">
+          {#if git.changes}<span class="dirty">●{git.changes}</span>{/if}
+          {#if git.ahead}<span class="ahead">↑{git.ahead}</span>{/if}
+          {#if !git.changes && !git.ahead}<span class="clean">✓</span>{/if}
+        </span>
       </span>
     {/if}
   {/each}
@@ -288,6 +306,57 @@
   }
   .net .up :global(svg) {
     color: #b46bff;
+  }
+  /* Largeurs réservées pour la valeur la plus longue possible : rien ne bouge. */
+  .w-pct,
+  .w-rate,
+  .w-time,
+  .w-date,
+  .w-ports,
+  .w-docker,
+  .w-git,
+  .w-gitstate {
+    display: inline-block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .w-pct {
+    width: 4.6ch; /* « 100 % » */
+    text-align: right;
+  }
+  .w-rate {
+    width: 7.2ch; /* « 999,9 Ko » */
+    text-align: right;
+  }
+  .w-time {
+    width: 5.2ch;
+    text-align: center;
+  }
+  .w-date {
+    width: 13ch; /* « mer. 30 sept. » */
+    text-align: center;
+  }
+  .w-ports {
+    width: 15ch;
+  }
+  .w-docker {
+    width: 6ch;
+  }
+  .w-git {
+    width: 18ch;
+  }
+  .w-gitstate {
+    width: 7ch;
+  }
+  .vertical .w-ports,
+  .vertical .w-git {
+    width: auto;
+    max-width: 22ch;
+  }
+  .clean {
+    color: #4caf50;
+    font-weight: 700;
   }
   .dirty {
     color: #f5a623;

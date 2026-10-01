@@ -74,8 +74,10 @@ pub struct Settings {
     /// Sources de la palette désactivées (« apps », « web », « shell »…)
     pub palette_disabled: Vec<String>,
     pub widget_enabled: bool,
-    /// Éléments affichés, dans l'ordre : « cpu », « ram », « net », « time »…
+    /// Éléments affichés (« cpu », « ram », « net », « time »…)
     pub widget_items: Vec<String>,
+    /// Ordre de tous les éléments, cochés ou non : cocher ne déplace rien
+    pub widget_order: Vec<String>,
     /// « free » (déplaçable), « taskbar-left » ou « taskbar-right »
     pub widget_mode: String,
     /// Position en mode libre (pixels physiques), retenue après un déplacement
@@ -139,6 +141,7 @@ impl Default for Settings {
             palette_disabled: vec![],
             widget_enabled: false,
             widget_items: ["cpu", "ram", "net", "time"].iter().map(|s| s.to_string()).collect(),
+            widget_order: ["cpu", "ram", "net", "time", "date", "battery", "ports", "docker", "git"].iter().map(|s| s.to_string()).collect(),
             widget_mode: "taskbar-left".into(),
             widget_pos: None,
             widget_vertical: false,
