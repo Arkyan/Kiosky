@@ -94,11 +94,11 @@
   <div class="row">
     <div class="ico"><Icon name="keyboard" size={18} /></div>
     <div class="grow">
-      <div class="strong">Raccourci du convertisseur rapide</div>
+      <div class="strong">Raccourci de la palette</div>
       <div class="small muted">
         {recording === "palette_shortcut"
           ? "Appuie sur la combinaison voulue (Échap pour annuler)…"
-          : "Ouvre la palette de conversion depuis n'importe quelle application."}
+          : "Recherche d'applications, projets, dossiers et calculs. Astuce : Alt+Space, comme PowerToys Run."}
       </div>
     </div>
     {@render shortcutButton("palette_shortcut")}

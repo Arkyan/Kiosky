@@ -16,6 +16,21 @@
 
   let seq = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  /** Indice du résultat qui attend une seconde validation (redémarrer, éteindre…) */
+  let confirming = $state(-1);
+  /** Palette vide : on affiche les éléments les plus utilisés */
+  let home = $state(false);
+
+  async function loadHome() {
+    if (!palette) return;
+    const id = ++seq;
+    const r = await api.paletteHome();
+    if (id === seq && !query.trim()) {
+      results = r;
+      selected = 0;
+      home = r.length > 0;
+    }
+  }
 
   export function setQuery(q: string) {
     query = q;
@@ -28,9 +43,12 @@
     timer = setTimeout(async () => {
       const id = ++seq;
       const q = query.trim();
+      confirming = -1;
       if (!q) {
         results = [];
         loading = false;
+        home = false;
+        loadHome();
         return;
       }
       loading = true;
@@ -39,6 +57,7 @@
         if (id === seq) {
           results = r;
           selected = 0;
+          home = false;
         }
       } finally {
         if (id === seq) loading = false;
@@ -46,15 +65,42 @@
     }, delay);
   }
 
+  const verb = (r: ConvResult) => r.action.split(":")[0];
+
   /** Icône du bouton de droite : l'action du résultat, ou la copie. */
-  const actionIcon = (r: ConvResult) =>
-    r.action.startsWith("kill:") ? "stop" : r.action.startsWith("open:") ? "globe" : "copy";
+  function actionIcon(r: ConvResult): string {
+    if (!r.action) return "copy";
+    return { kill: "stop", open: "globe", system: "power" }[verb(r)] ?? "bolt";
+  }
+
+  /** Icône de gauche pour les résultats de recherche (applications, projets…) */
+  function kindIcon(r: ConvResult): string | null {
+    const icons: Record<string, string> = {
+      app: "sparkle",
+      project: "code",
+      openwith: "folder",
+      uri: "settings",
+      run: "terminal",
+      system: "power",
+      page: "calc",
+      pick: "pipette",
+    };
+    return icons[verb(r)] ?? null;
+  }
+
+  /** Actions irréversibles : Entrée deux fois. */
+  const needsConfirm = (r: ConvResult) => ["system:restart", "system:shutdown", "system:logoff"].includes(r.action);
 
   async function copy(i: number) {
     const r = results[i];
     if (!r || r.error || (!r.copy && !r.action)) return;
     if (r.action) {
-      // « kill 3000 », « port 5173 » : Entrée lance l'action au lieu de copier.
+      if (needsConfirm(r) && confirming !== i) {
+        confirming = i;
+        return;
+      }
+      confirming = -1;
+      // Applications, projets, « kill 3000 »… : Entrée lance l'action au lieu de copier.
       try {
         await api.runAction(r.action);
       } catch (e) {
@@ -75,6 +121,7 @@
       if (!results.length) return;
       const d = e.key === "ArrowDown" ? 1 : -1;
       selected = (selected + d + results.length) % results.length;
+      confirming = -1;
       await tick();
       list?.querySelector(".sel")?.scrollIntoView({ block: "nearest" });
     } else if (e.key === "Enter") {
@@ -97,9 +144,12 @@
     const un = listen("palette-open", async () => {
       query = "";
       results = [];
+      confirming = -1;
       await tick();
       input?.focus();
+      loadHome();
     });
+    loadHome();
     return () => {
       un.then((f) => f());
     };
@@ -114,7 +164,7 @@
       bind:value={query}
       oninput={() => run()}
       {onkeydown}
-      placeholder="10 km en miles · 50 eur usd · 14h tokyo · 2^10 · kill 3000"
+      placeholder={palette ? "Application, projet, dossier, paramètre… ou 10 km en miles, 2^10" : "10 km en miles · 50 eur usd · 14h tokyo · 2^10 · kill 3000"}
       spellcheck="false"
       autocomplete="off"
     />
@@ -124,18 +174,36 @@
   </div>
 
   <div class="results" bind:this={list}>
+    {#if home}<div class="section">Les plus utilisés</div>{/if}
     {#each results as r, i (i)}
+      {@const kind = kindIcon(r)}
       <button
         class="result"
         class:sel={i === selected}
         class:error={r.error}
+        class:launch={!!kind}
+        class:confirm={confirming === i}
         onmouseenter={() => (selected = i)}
         onclick={() => copy(i)}
       >
+        {#if kind}
+          <span class="kind"><Icon name={kind} size={17} /></span>
+        {/if}
         <div class="text">
-          <span class="title">{r.title}</span>
-          <span class="value" class:mono={r.title.startsWith("JSON") || r.title.startsWith("Base64")}>{r.value}</span>
-          {#if r.hint}<span class="hint">{r.hint}</span>{/if}
+          {#if kind}
+            <span class="value">{r.value}</span>
+            <span class="hint">
+              {#if confirming === i}
+                Entrée encore une fois pour confirmer
+              {:else}
+                {r.title}{r.hint ? ` · ${r.hint}` : ""}
+              {/if}
+            </span>
+          {:else}
+            <span class="title">{r.title}</span>
+            <span class="value" class:mono={r.title.startsWith("JSON") || r.title.startsWith("Base64")}>{r.value}</span>
+            {#if r.hint}<span class="hint">{r.hint}</span>{/if}
+          {/if}
         </div>
         {#if !r.error && (r.copy || r.action)}
           <span class="action" class:done={copied === i} class:act={!!r.action}>
@@ -145,7 +213,7 @@
       </button>
     {:else}
       {#if query.trim() && !loading}
-        <div class="empty">Rien de reconnu. Essaie « 72 f en c », « 20% de 150 », « paris en new york » ou « port 3000 ».</div>
+        <div class="empty">Rien trouvé. Essaie un nom d'application, de projet, « wifi », « 72 f en c » ou « port 3000 ».</div>
       {/if}
     {/each}
   </div>
@@ -230,6 +298,42 @@
     text-align: left;
     cursor: pointer;
     animation: enter 0.18s ease-out both;
+  }
+  .section {
+    padding: 6px 14px 4px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-3);
+  }
+  .result.launch {
+    padding-top: 7px;
+    padding-bottom: 7px;
+  }
+  .kind {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .launch .value {
+    font-size: 14.5px;
+  }
+  .launch .hint {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .result.confirm .hint {
+    color: var(--bad);
+    font-weight: 600;
+  }
+  .result.confirm .kind {
+    background: color-mix(in srgb, var(--bad) 15%, transparent);
+    color: var(--bad);
   }
   .result.sel {
     background: var(--fill-hover);

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { listen } from "@tauri-apps/api/event";
   import Icon from "./lib/Icon.svelte";
   import { store, loadSettings } from "./lib/settings.svelte";
   import ConverterPage from "./pages/ConverterPage.svelte";
@@ -48,6 +49,12 @@
 
   onMount(() => {
     loadSettings().catch((e) => (loadError = String(e)));
+    // La palette peut ouvrir une page (« nettoyage », « ports »…).
+    const un = listen<string>("navigate", (e) => {
+      const target = e.payload as Page;
+      if (target === "settings" || nav.some((n) => n.id === target)) page = target;
+    });
+    return () => un.then((f) => f());
   });
 </script>
 

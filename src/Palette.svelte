@@ -6,7 +6,7 @@
   <ConverterBox palette />
   <footer>
     <span><kbd>↑</kbd> <kbd>↓</kbd> naviguer</span>
-    <span><kbd>Entrée</kbd> copier</span>
+    <span><kbd>Entrée</kbd> ouvrir ou copier</span>
     <span><kbd>Échap</kbd> fermer</span>
   </footer>
 </div>

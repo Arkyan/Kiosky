@@ -144,20 +144,25 @@ pub fn pick_folder(owner: isize, title: &str) -> Result<Option<String>, String> 
     }
 }
 
-/// Ouvre une adresse locale (http://localhost:PORT) dans le navigateur par défaut.
-pub fn open_local_url(url: &str) -> Result<(), String> {
+/// « Ouvre » une cible comme le ferait un double-clic : URI, programme, console .msc…
+pub fn shell_open(target: &str) -> Result<(), String> {
     use windows::core::HSTRING;
     use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::Shell::ShellExecuteW;
     use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
+    let result = unsafe {
+        ShellExecuteW(HWND::default(), &HSTRING::from("open"), &HSTRING::from(target), None, None, SW_SHOWNORMAL)
+    };
+    // ShellExecute renvoie une valeur > 32 en cas de succès.
+    if result.0 as isize > 32 { Ok(()) } else { Err(format!("Impossible d'ouvrir « {target} »")) }
+}
+
+/// Ouvre une adresse locale (http://localhost:PORT) dans le navigateur par défaut.
+pub fn open_local_url(url: &str) -> Result<(), String> {
     let rest = url.strip_prefix("http://localhost:").ok_or("Seules les adresses localhost sont autorisées")?;
     if rest.is_empty() || !rest.chars().all(|c| c.is_ascii_digit()) {
         return Err("Adresse invalide".into());
     }
-    let result = unsafe {
-        ShellExecuteW(HWND::default(), &HSTRING::from("open"), &HSTRING::from(url), None, None, SW_SHOWNORMAL)
-    };
-    // ShellExecute renvoie une valeur > 32 en cas de succès.
-    if result.0 as isize > 32 { Ok(()) } else { Err("Impossible d'ouvrir le navigateur".into()) }
+    shell_open(url)
 }

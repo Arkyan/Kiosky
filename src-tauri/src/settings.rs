@@ -65,6 +65,8 @@ pub struct Settings {
     pub project_favorites: Vec<String>,
     /// Dernière ouverture de chaque projet depuis Toolbox (chemin → secondes Unix)
     pub project_opened: HashMap<String, u64>,
+    /// Nombre d'ouvertures de chaque résultat de la palette (action → compteur)
+    pub launch_counts: HashMap<String, u32>,
 }
 
 impl Default for Settings {
@@ -93,6 +95,7 @@ impl Default for Settings {
             project_roots: vec![],
             project_favorites: vec![],
             project_opened: HashMap::new(),
+            launch_counts: HashMap::new(),
         }
     }
 }

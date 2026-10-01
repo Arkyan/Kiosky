@@ -11,6 +11,7 @@ mod expander;
 mod launcher;
 mod monitor;
 mod ports;
+mod search;
 mod projects;
 mod settings;
 mod startup;
@@ -155,7 +156,7 @@ fn start_color_pick(app: &AppHandle, from_main: bool) {
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "Ouvrir Toolbox", true, None::<&str>)?;
-    let palette = MenuItem::with_id(app, "palette", "Convertisseur rapide", true, None::<&str>)?;
+    let palette = MenuItem::with_id(app, "palette", "Palette de recherche", true, None::<&str>)?;
     let picker = MenuItem::with_id(app, "picker", "Pipette de couleur", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quitter", true, None::<&str>)?;
@@ -224,6 +225,7 @@ fn save_settings(app: AppHandle, state: State<'_, AppState>, mut settings: Setti
     // Valeurs tenues par Rust : l'interface peut en avoir une copie périmée.
     settings.cleaned_total = old.cleaned_total;
     settings.project_opened = old.project_opened.clone();
+    settings.launch_counts = old.launch_counts.clone();
     if let Some(tray) = app.tray_by_id("toolbox") {
         if old.monitor_tooltip && !settings.monitor_tooltip {
             let _ = tray.set_tooltip(Some("Toolbox"));
@@ -239,8 +241,23 @@ fn save_settings(app: AppHandle, state: State<'_, AppState>, mut settings: Setti
 }
 
 #[tauri::command]
-async fn convert(input: String) -> Vec<converter::ConvResult> {
-    converter::convert(&input).await
+async fn convert(state: State<'_, AppState>, input: String) -> Result<Vec<converter::ConvResult>, String> {
+    let mut out = converter::convert(&input).await;
+    // « kill 3000 » / « port 3000 » : la commande suffit, pas de recherche d'applis.
+    if out.iter().any(|r| r.action.starts_with("kill:") || r.title.starts_with("Port ")) {
+        return Ok(out);
+    }
+    let settings = state.settings.lock().unwrap().clone();
+    let projects = projects::load_cache(&projects_cache(&state));
+    out.extend(search::search(&input, &settings, &projects));
+    Ok(out)
+}
+
+/// Palette vide : les éléments les plus souvent ouverts.
+#[tauri::command]
+fn palette_home(state: State<'_, AppState>) -> Vec<converter::ConvResult> {
+    let settings = state.settings.lock().unwrap().clone();
+    search::home(&settings, &projects::load_cache(&projects_cache(&state)))
 }
 
 #[tauri::command]
@@ -487,14 +504,96 @@ fn open_url(url: String) -> Result<(), String> {
 
 /// Action d'un résultat de la palette (voir `ConvResult::action`).
 #[tauri::command]
-async fn run_action(action: String) -> Result<(), String> {
-    match action.split_once(':') {
-        Some(("kill", pid)) => {
-            let pid: u32 = pid.parse().map_err(|_| "PID invalide".to_string())?;
-            blocking(move || ports::kill(pid)).await
+async fn run_action(app: AppHandle, state: State<'_, AppState>, action: String) -> Result<(), String> {
+    let (verb, arg) = action.split_once(':').unwrap_or((action.as_str(), ""));
+    let arg = arg.to_string();
+    match verb {
+        "kill" => {
+            let pid: u32 = arg.parse().map_err(|_| "PID invalide".to_string())?;
+            return blocking(move || ports::kill(pid)).await;
         }
-        Some(("open", url)) => util::open_local_url(url),
-        _ => Err(format!("Action inconnue : {action}")),
+        "open" => return util::open_local_url(&arg),
+        "app" => {
+            // shell:AppsFolder lance aussi bien les applis du Store que les programmes classiques.
+            std::process::Command::new("explorer.exe")
+                .arg(format!("shell:AppsFolder\\{arg}"))
+                .spawn()
+                .map_err(|e| format!("Impossible de lancer l'application : {e}"))?;
+        }
+        "project" => {
+            let (editor, path) = arg.split_once('|').ok_or("Action invalide")?;
+            let (editor, path) = (editor.to_string(), path.to_string());
+            let p = path.clone();
+            blocking(move || launcher::open_with(&editor, &p)).await?;
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+            state.settings.lock().unwrap().project_opened.insert(path, now);
+        }
+        "openwith" => {
+            let (opener, path) = arg.split_once('|').ok_or("Action invalide")?;
+            let (opener, path) = (opener.to_string(), path.to_string());
+            blocking(move || launcher::open_with(&opener, &path)).await?;
+        }
+        "uri" => {
+            if !(arg.starts_with("ms-settings:") || arg == "windowsdefender:") {
+                return Err("Adresse non autorisée".into());
+            }
+            util::shell_open(&arg)?;
+        }
+        "run" => {
+            // Seulement les outils connus de la liste, jamais une commande arbitraire.
+            if !search::TOOLS.iter().any(|(_, cmd, _)| *cmd == arg) {
+                return Err("Outil inconnu".into());
+            }
+            util::shell_open(&arg)?;
+        }
+        "system" => system_action(&arg)?,
+        "page" => {
+            show_main(&app);
+            let _ = app.emit_to("main", "navigate", arg.clone());
+        }
+        "pick" => {
+            // Laisse la palette se fermer avant que la loupe n'apparaisse.
+            let app = app.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(300));
+                start_color_pick(&app, false);
+            });
+        }
+        _ => return Err(format!("Action inconnue : {action}")),
+    }
+    let mut s = state.settings.lock().unwrap();
+    *s.launch_counts.entry(action.clone()).or_insert(0) += 1;
+    settings::save(&state.path, &s)
+}
+
+fn system_action(what: &str) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    use std::process::Command;
+    let shutdown = |args: &[&str]| {
+        Command::new("shutdown.exe")
+            .args(args)
+            .creation_flags(util::CREATE_NO_WINDOW)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    };
+    match what {
+        "lock" => unsafe { windows::Win32::System::Shutdown::LockWorkStation() }.map_err(|e| e.to_string()),
+        "sleep" => {
+            // Après un court délai : le temps que la palette se ferme.
+            std::thread::spawn(|| {
+                std::thread::sleep(std::time::Duration::from_millis(400));
+                unsafe {
+                    windows::Win32::System::Power::SetSuspendState(false, false, false);
+                }
+            });
+            Ok(())
+        }
+        "restart" => shutdown(&["/r", "/t", "0"]),
+        "shutdown" => shutdown(&["/s", "/t", "0"]),
+        "logoff" => shutdown(&["/l"]),
+        "recycle" => util::shell_open("shell:RecycleBinFolder"),
+        _ => Err(format!("Action système inconnue : {what}")),
     }
 }
 
@@ -548,6 +647,7 @@ fn main() {
                 eprintln!("{e}");
             }
             build_tray(app.handle())?;
+            search::refresh_apps(); // liste des applis prête avant la première recherche
 
             // La loupe de la pipette laisse passer la souris.
             if let Some(loupe) = app.get_webview_window("picker") {
@@ -628,6 +728,7 @@ fn main() {
             open_project,
             open_with,
             run_action,
+            palette_home,
             get_autostart,
             set_autostart,
         ])
