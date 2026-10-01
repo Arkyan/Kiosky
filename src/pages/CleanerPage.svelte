@@ -183,7 +183,7 @@
   }
 
   function ago(secs: number): string {
-    if (!secs) return "—";
+    if (!secs) return "date inconnue";
     const d = (Date.now() / 1000 - secs) / DAY;
     if (d < 1) return "aujourd'hui";
     if (d < 2) return "hier";

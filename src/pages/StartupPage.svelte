@@ -95,7 +95,7 @@
   <div class="stats">
     <div class="card stat">
       <span class="slabel">Dernier démarrage</span>
-      <span class="big">{lastBoot ? fmtSeconds(lastBoot.total_ms) : "—"}</span>
+      <span class="big">{lastBoot ? fmtSeconds(lastBoot.total_ms) : "Inconnu"}</span>
       <span class="small muted">
         {#if lastBoot}
           {lastBoot.date} · bureau prêt en {fmtSeconds(lastBoot.main_ms)}
@@ -113,7 +113,7 @@
     </div>
     <div class="card stat">
       <span class="slabel">Le plus lent</span>
-      <span class="big name">{slowest ? slowest.name : "—"}</span>
+      <span class="big name">{slowest ? slowest.name : "Aucun"}</span>
       <span class="small muted">{slowest?.impact_ms ? `+${fmtSeconds(slowest.impact_ms)} au démarrage` : "Aucun ralentissement signalé"}</span>
     </div>
   </div>

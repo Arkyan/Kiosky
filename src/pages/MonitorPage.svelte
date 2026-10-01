@@ -101,7 +101,7 @@
   <div class="card metric {level(last?.cpu ?? 0)}">
     <div class="head">
       <span class="label">Processeur</span>
-      <span class="value">{last ? pct(last.cpu) : "—"}</span>
+      <span class="value">{last ? pct(last.cpu) : "…"}</span>
     </div>
     <svg viewBox="0 0 {W} {H}" preserveAspectRatio="none">
       <path class="fill" d={cpuCurve.fill} />
@@ -112,7 +112,7 @@
   <div class="card metric {level(memPct)}">
     <div class="head">
       <span class="label">Mémoire</span>
-      <span class="value">{last ? pct(memPct) : "—"}</span>
+      <span class="value">{last ? pct(memPct) : "…"}</span>
     </div>
     <svg viewBox="0 0 {W} {H}" preserveAspectRatio="none">
       <path class="fill" d={memCurve.fill} />
@@ -125,8 +125,8 @@
     <div class="head">
       <span class="label">Réseau</span>
       <span class="legend">
-        <span class="down"><Icon name="down" size={13} /> {last ? fmtBytes(last.net_down) : "—"}/s</span>
-        <span class="up"><Icon name="up" size={13} /> {last ? fmtBytes(last.net_up) : "—"}/s</span>
+        <span class="down"><Icon name="down" size={13} /> {last ? `${fmtBytes(last.net_down)}/s` : "…"}</span>
+        <span class="up"><Icon name="up" size={13} /> {last ? `${fmtBytes(last.net_up)}/s` : "…"}</span>
       </span>
     </div>
     <svg viewBox="0 0 {W} {H}" preserveAspectRatio="none">
