@@ -6,7 +6,8 @@
     "main",
     "palette",
     "picker",
-    "widget"
+    "widget",
+    "tip"
   ],
   "permissions": [
     "core:default",

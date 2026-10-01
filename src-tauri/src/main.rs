@@ -192,6 +192,7 @@ fn apply_widget(app: &AppHandle, s: &Settings) {
         } else {
             widget::guard(None);
             let _ = w.hide();
+            hide_tip(app.clone());
         }
     }
     if let (Some(tray), Ok(menu)) = (app.tray_by_id("toolbox"), tray_menu(app, s)) {
@@ -251,6 +252,69 @@ fn taskbar_height(app: AppHandle) -> Option<f64> {
 #[tauri::command]
 fn get_battery() -> widget::Battery {
     widget::battery()
+}
+
+// ───────────────────────────── Infobulle de la barre ─────────────────────────────
+
+/// Numéro de l'infobulle demandée : une réponse tardive d'une infobulle déjà masquée est ignorée.
+static TIP_SEQ: AtomicU64 = AtomicU64::new(0);
+/// Point d'ancrage (centre de l'élément survolé), en pixels CSS dans la barre flottante.
+static TIP_ANCHOR: Mutex<(f64, f64)> = Mutex::new((0.0, 0.0));
+
+#[tauri::command]
+fn show_tip(app: AppHandle, text: String, anchor_x: f64, anchor_w: f64) -> u64 {
+    let seq = TIP_SEQ.fetch_add(1, Ordering::Relaxed) + 1;
+    *TIP_ANCHOR.lock().unwrap() = (anchor_x, anchor_w);
+    let _ = app.emit_to("tip", "tip-content", serde_json::json!({ "text": text, "seq": seq }));
+    seq
+}
+
+/// L'infobulle connaît sa taille : on la place au-dessus de l'élément survolé, centrée,
+/// en dessous seulement s'il n'y a pas la place au-dessus, sans jamais sortir de l'écran.
+#[tauri::command]
+fn place_tip(app: AppHandle, width: f64, height: f64, seq: u64) -> Result<(), String> {
+    if seq != TIP_SEQ.load(Ordering::Relaxed) {
+        return Ok(()); // déjà masquée ou remplacée
+    }
+    let (Some(tip), Some(bar)) = (app.get_webview_window("tip"), app.get_webview_window("widget")) else {
+        return Ok(());
+    };
+    tip.set_size(LogicalSize::new(width.ceil(), height.ceil())).map_err(|e| e.to_string())?;
+    let scale = bar.scale_factor().map_err(|e| e.to_string())?;
+    let bar_pos = bar.outer_position().map_err(|e| e.to_string())?;
+    let bar_size = bar.outer_size().map_err(|e| e.to_string())?;
+    let size = tip.outer_size().map_err(|e| e.to_string())?;
+    let (ax, aw) = *TIP_ANCHOR.lock().unwrap();
+    let gap = (6.0 * scale) as i32;
+    let center = bar_pos.x + ((ax + aw / 2.0) * scale) as i32;
+    let mut x = center - size.width as i32 / 2;
+    let mut y = bar_pos.y - size.height as i32 - gap;
+    if let Ok(Some(m)) = bar.current_monitor() {
+        let (left, top) = (m.position().x, m.position().y);
+        let right = left + m.size().width as i32;
+        if y < top {
+            y = bar_pos.y + bar_size.height as i32 + gap; // pas de place au-dessus (barre en haut de l'écran)
+        }
+        x = x.clamp(left + gap, (right - size.width as i32 - gap).max(left));
+    }
+    tip.set_position(PhysicalPosition::new(x, y)).map_err(|e| e.to_string())?;
+    if seq == TIP_SEQ.load(Ordering::Relaxed) {
+        let _ = tip.show();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn hide_tip(app: AppHandle) {
+    TIP_SEQ.fetch_add(1, Ordering::Relaxed);
+    if let Some(tip) = app.get_webview_window("tip") {
+        let _ = tip.hide();
+    }
+}
+
+#[tauri::command]
+async fn media_focus() -> Result<(), String> {
+    blocking(media::focus_source).await
 }
 
 #[tauri::command]
@@ -880,6 +944,14 @@ fn main() {
             // Barre flottante : apparition et disparition sans animation.
             if let Some(raw) = widget_raw(app.handle()) {
                 widget::disable_animations(raw);
+                // Infobulle : traversée par la souris, instantanée, toujours au-dessus de la barre.
+                if let Some(tip) = app.get_webview_window("tip") {
+                    let _ = tip.set_ignore_cursor_events(true);
+                    if let Ok(h) = tip.hwnd() {
+                        widget::disable_animations(h.0 as isize);
+                        widget::set_owner(h.0 as isize, raw);
+                    }
+                }
             }
 
             // La loupe de la pipette laisse passer la souris.
@@ -994,6 +1066,10 @@ fn main() {
             taskbar_height,
             get_battery,
             get_media,
+            media_focus,
+            show_tip,
+            place_tip,
+            hide_tip,
             media_control,
             get_volume,
             get_autostart,

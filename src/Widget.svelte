@@ -8,7 +8,7 @@
   // Barre flottante : fenêtre transparente qui s'ajuste à son contenu (Rust la place et l'affiche).
   // Clic sur un élément : son action. Survol : le détail en infobulle. Molette sur le volume : réglage.
 
-  type Media = { title: string; artist: string; app: string; playing: boolean };
+  type Media = { title: string; artist: string; app: string; playing: boolean; cover: string | null };
 
   let settings = $state<Settings | null>(null);
   let sample = $state<Sample | null>(null);
@@ -41,7 +41,6 @@
     refreshFast();
     refreshDocker();
     refreshGit();
-    if (timer.phase === "idle") timer.left = (settings.widget_work_min || 25) * 60;
     await fit(true);
   }
 
@@ -89,71 +88,6 @@
     git = { name, path: fav, branch: st?.branch ?? "—", changes: st?.changes ?? 0, ahead: st?.ahead ?? 0, behind: st?.behind ?? 0 };
   }
 
-  // ─── Minuteur (Pomodoro) ───
-
-  let timer = $state<{ phase: "idle" | "work" | "break"; left: number; running: boolean; ring: boolean }>({
-    phase: "idle",
-    left: 25 * 60,
-    running: false,
-    ring: false,
-  });
-
-  /** Petit signal sonore de fin, sans fichier audio. */
-  function beep() {
-    try {
-      const ctx = new AudioContext();
-      [0, 0.25, 0.5].forEach((t) => {
-        const o = ctx.createOscillator();
-        const g = ctx.createGain();
-        o.frequency.value = 880;
-        g.gain.setValueAtTime(0.0001, ctx.currentTime + t);
-        g.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + t + 0.02);
-        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + 0.18);
-        o.connect(g).connect(ctx.destination);
-        o.start(ctx.currentTime + t);
-        o.stop(ctx.currentTime + t + 0.2);
-      });
-    } catch {
-      // Pas de son disponible : le clignotement suffit.
-    }
-  }
-
-  function timerTick() {
-    if (!timer.running) return;
-    timer.left -= 1;
-    if (timer.left > 0) return;
-    beep();
-    timer.ring = true;
-    setTimeout(() => (timer.ring = false), 4000);
-    if (timer.phase === "work") {
-      // Fin du travail : la pause démarre toute seule.
-      timer.phase = "break";
-      timer.left = (settings?.widget_break_min || 5) * 60;
-    } else {
-      timer.phase = "idle";
-      timer.running = false;
-      timer.left = (settings?.widget_work_min || 25) * 60;
-    }
-  }
-
-  function timerClick() {
-    if (timer.phase === "idle") {
-      timer.phase = "work";
-      timer.left = (settings?.widget_work_min || 25) * 60;
-      timer.running = true;
-    } else {
-      timer.running = !timer.running;
-    }
-  }
-
-  function timerReset() {
-    timer.phase = "idle";
-    timer.running = false;
-    timer.left = (settings?.widget_work_min || 25) * 60;
-  }
-
-  const mmss = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
-
   // ─── Taille : la fenêtre épouse la barre ───
 
   let lastSize = "";
@@ -175,10 +109,7 @@
   onMount(() => {
     loadSettings();
     const timers = [
-      setInterval(() => {
-        now = new Date();
-        timerTick();
-      }, 1000),
+      setInterval(() => (now = new Date()), 1000),
       setInterval(refreshFast, 1500),
       setInterval(refreshSlow, 5000),
       setInterval(refreshDocker, 15000),
@@ -203,6 +134,11 @@
 
   function onpointerdown(e: PointerEvent) {
     if (e.button !== 0) return;
+    clearTimeout(tipTimer);
+    if (tipShown) {
+      tipShown = "";
+      api.hideTip();
+    }
     down = { x: e.screenX, y: e.screenY };
     dragged = false;
   }
@@ -248,8 +184,8 @@
         if (!volume) return;
         volume = { ...volume, muted: !volume.muted };
         return api.setMasterMute(volume.muted);
-      case "timer":
-        return timerClick();
+      case "media-open":
+        return api.mediaFocus().catch(() => {});
     }
   }
 
@@ -262,12 +198,52 @@
     if (v > 0) api.setMasterMute(false);
   }
 
-  function oncontextmenu(e: MouseEvent) {
-    if ((e.target as Element).closest("[data-act='timer']")) {
-      e.preventDefault();
-      timerReset();
-    }
+  // ─── Infobulle : fenêtre à part, toujours au-dessus de la barre ───
+
+  let tipKey: string | null = null;
+  let tipEl: HTMLElement | null = null;
+  let tipTimer: ReturnType<typeof setTimeout> | undefined;
+  let tipShown = "";
+
+  function sendTip() {
+    if (!tipKey || !tipEl) return;
+    const text = tips[tipKey];
+    if (!text) return;
+    tipShown = text;
+    const r = tipEl.getBoundingClientRect();
+    api.showTip(text, r.left, r.width);
   }
+
+  function onpointerover(e: PointerEvent) {
+    const el = (e.target as Element).closest<HTMLElement>("[data-tip]");
+    const key = el?.dataset.tip ?? null;
+    if (key === tipKey) return;
+    clearTimeout(tipTimer);
+    tipKey = key;
+    tipEl = el ?? null;
+    if (!key) {
+      tipShown = "";
+      api.hideTip();
+      return;
+    }
+    // Déjà une infobulle ouverte : on passe directement à la suivante.
+    tipTimer = setTimeout(sendTip, tipShown ? 0 : 450);
+  }
+
+  function onpointerleave() {
+    clearTimeout(tipTimer);
+    tipKey = null;
+    tipEl = null;
+    tipShown = "";
+    api.hideTip();
+  }
+
+  // Les valeurs changent pendant le survol : l'infobulle suit.
+  $effect(() => {
+    const key = tipKey;
+    const text = key ? tips[key] : "";
+    if (key && tipShown && text && text !== tipShown) sendTip();
+  });
 
   // ─── Affichage ───
 
@@ -322,14 +298,9 @@
         "\n\nClic : ouvrir le projet"
       : "",
     media: media
-      ? `${media.title}${media.artist ? `\n${media.artist}` : ""}\n${media.app} — ${media.playing ? "en lecture" : "en pause"}\n\nClic : lecture / pause`
-      : "Aucune lecture en cours",
+      ? `${media.title}${media.artist ? `\n${media.artist}` : ""}\n${media.app} — ${media.playing ? "en lecture" : "en pause"}\n\nClic sur le titre : ouvrir ${media.app}`
+      : "Aucune lecture en cours\n\nLance Spotify, YouTube, VLC…",
     volume: volume ? `Volume : ${volume.muted ? "coupé" : pct(volume.volume * 100)}\n\nMolette : régler · Clic : couper / rétablir` : "Volume",
-    timer:
-      `Minuteur : ${settings?.widget_work_min ?? 25} min de travail, ${settings?.widget_break_min ?? 5} min de pause\n` +
-      (timer.phase === "idle" ? "Prêt" : timer.phase === "work" ? "Travail" : "Pause") +
-      (timer.phase !== "idle" && !timer.running ? " (en pause)" : "") +
-      "\n\nClic : démarrer / mettre en pause · Clic droit : remettre à zéro",
   } as Record<string, string>);
 </script>
 
@@ -346,47 +317,48 @@
   {onpointermove}
   {onpointerup}
   {onwheel}
-  {oncontextmenu}
+  {onpointerover}
+  {onpointerleave}
 >
   {#each items as id (id)}
     {#if id === "cpu"}
-      <span class="item click {level(sample?.cpu ?? 0)}" data-act="monitor" title={tips.cpu}>
+      <span class="item click {level(sample?.cpu ?? 0)}" data-act="monitor" data-tip="cpu">
         <span class="lbl">CPU</span>
         <span class="gauge"><span style:height={`${Math.min(100, sample?.cpu ?? 0)}%`}></span></span>
         <span class="val w-pct">{sample ? pct(sample.cpu) : "…"}</span>
       </span>
     {:else if id === "ram"}
-      <span class="item click {level(memPct)}" data-act="monitor" title={tips.ram}>
+      <span class="item click {level(memPct)}" data-act="monitor" data-tip="ram">
         <span class="lbl">RAM</span>
         <span class="gauge"><span style:height={`${memPct}%`}></span></span>
         <span class="val w-pct">{sample ? pct(memPct) : "…"}</span>
       </span>
     {:else if id === "net"}
-      <span class="item click net" data-act="monitor" title={tips.net}>
+      <span class="item click net" data-act="monitor" data-tip="net">
         <span class="down"><Icon name="down" size={11} /><span class="w-rate">{sample ? rate(sample.net_down) : "…"}</span></span>
         <span class="up"><Icon name="up" size={11} /><span class="w-rate">{sample ? rate(sample.net_up) : "…"}</span></span>
       </span>
     {:else if id === "time"}
-      <span class="item" title={tips.time}><span class="val big w-time">{time}</span></span>
+      <span class="item" data-tip="time"><span class="val big w-time">{time}</span></span>
     {:else if id === "date"}
-      <span class="item" title={tips.date}><span class="val w-date">{date}</span></span>
+      <span class="item" data-tip="date"><span class="val w-date">{date}</span></span>
     {:else if id === "battery" && battery?.present}
-      <span class="item click {battery.percent <= 15 && !battery.charging ? 'bad' : ''}" data-act="battery" title={tips.battery}>
+      <span class="item click {battery.percent <= 15 && !battery.charging ? 'bad' : ''}" data-act="battery" data-tip="battery">
         <Icon name={battery.charging ? "bolt" : "power"} size={12} />
         <span class="val w-pct">{battery.percent} %</span>
       </span>
     {:else if id === "ports"}
-      <span class="item click" data-act="ports" title={tips.ports}>
+      <span class="item click" data-act="ports" data-tip="ports">
         <Icon name="plug" size={12} />
         <span class="val w-ports">{devPorts.length ? devPorts.map((p) => p.port).join(" · ") : "aucun"}</span>
       </span>
     {:else if id === "docker"}
-      <span class="item click" data-act="docker" title={tips.docker}>
+      <span class="item click" data-act="docker" data-tip="docker">
         <Icon name="box" size={12} />
         <span class="val w-docker">{!docker ? "…" : docker.up ? `${docker.running}/${docker.total}` : "arrêté"}</span>
       </span>
     {:else if id === "git" && git}
-      <span class="item click" data-act="git" title={tips.git}>
+      <span class="item click" data-act="git" data-tip="git">
         <Icon name="branch" size={12} />
         <span class="val w-git">{git.name} · {git.branch}</span>
         <span class="w-gitstate">
@@ -396,29 +368,32 @@
         </span>
       </span>
     {:else if id === "media"}
-      <span class="item media" class:paused={!media?.playing}>
-        <button class="mbtn" data-act="media-prev" title="Précédent" disabled={!media}><Icon name="up_small" size={12} /></button>
-        <span class="mtext click" data-act="media-toggle" title={tips.media}>
-          <span class="micon">{media?.playing ? "▶" : "❚❚"}</span>
-          <span class="w-media">{media ? (media.artist ? `${media.title} — ${media.artist}` : media.title) : "Rien en lecture"}</span>
+      <span class="item media" class:paused={!media?.playing} class:empty={!media}>
+        <span class="mopen" data-act="media-open" data-tip="media">
+          {#if media?.cover}
+            <img class="cover" src={media.cover} alt="" />
+          {:else}
+            <span class="cover none"><Icon name="volume" size={13} /></span>
+          {/if}
+          <span class="mlines">
+            <span class="mtitle">{media ? media.title : "Aucune lecture"}</span>
+            {#if !onTaskbar || (taskbarH ?? 40) >= 40}
+              <span class="martist">{media ? media.artist || media.app : "Spotify, YouTube…"}</span>
+            {/if}
+          </span>
         </span>
-        <button class="mbtn" data-act="media-next" title="Suivant" disabled={!media}><Icon name="down_small" size={12} /></button>
+        <span class="mctl">
+          <button class="mbtn" data-act="media-prev" disabled={!media} aria-label="Précédent"><Icon name="prev" size={14} /></button>
+          <button class="mbtn play" data-act="media-toggle" disabled={!media} aria-label="Lecture ou pause">
+            <Icon name={media?.playing ? "pause" : "play"} size={15} />
+          </button>
+          <button class="mbtn" data-act="media-next" disabled={!media} aria-label="Suivant"><Icon name="next" size={14} /></button>
+        </span>
       </span>
     {:else if id === "volume"}
-      <span class="item click" class:muted={volume?.muted} data-act="volume" title={tips.volume}>
+      <span class="item click" class:muted={volume?.muted} data-act="volume" data-tip="volume">
         <Icon name={volume?.muted ? "mute" : "volume"} size={13} />
         <span class="val w-pct">{!volume ? "…" : volume.muted ? "muet" : pct(volume.volume * 100)}</span>
-      </span>
-    {:else if id === "timer"}
-      <span
-        class="item click timer {timer.phase}"
-        class:stopped={!timer.running}
-        class:ring={timer.ring}
-        data-act="timer"
-        title={tips.timer}
-      >
-        <Icon name="clock" size={12} />
-        <span class="val w-time">{mmss(timer.left)}</span>
       </span>
     {/if}
   {/each}
@@ -612,80 +587,101 @@
   .mtext:hover {
     background: rgba(128, 128, 128, 0.18);
   }
-  .media {
-    gap: 2px;
-    padding: 0 3px;
+  .muted .val,
+  .muted :global(svg) {
+    color: var(--dim);
   }
-  .mtext {
+  /* Lecteur : pochette, titre et artiste sur deux lignes, ⏮ ⏯ ⏭ */
+  .media {
+    gap: 4px;
+    padding: 0 4px 0 3px;
+  }
+  .mopen {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 7px;
     height: 100%;
-    padding: 0 5px;
+    padding: 0 6px 0 3px;
     border-radius: 5px;
     cursor: pointer;
   }
-  .micon {
-    width: 1.3ch;
-    font-size: 9px;
-    text-align: center;
-    color: #3a9bf0;
+  .mopen:hover {
+    background: rgba(128, 128, 128, 0.18);
   }
-  .paused .micon,
-  .paused .w-media {
+  .empty .mopen {
+    cursor: default;
+  }
+  .cover {
+    flex: none;
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    object-fit: cover;
+  }
+  .cover.none {
+    display: grid;
+    place-items: center;
+    background: rgba(128, 128, 128, 0.22);
     color: var(--dim);
   }
-  .w-media {
-    display: inline-block;
-    width: 22ch;
+  .mlines {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    width: 19ch; /* largeur fixe : rien ne bouge d'un morceau à l'autre */
+  }
+  .mtitle,
+  .martist {
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+  }
+  .mtitle {
+    font-size: 11.5px;
     font-weight: 600;
+  }
+  .martist {
+    font-size: 10px;
+    color: var(--dim);
+  }
+  .paused .mtitle,
+  .empty .mtitle {
+    color: var(--dim);
+  }
+  .mctl {
+    display: inline-flex;
+    align-items: center;
   }
   .mbtn {
     display: grid;
     place-items: center;
-    width: 18px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
     padding: 0;
     border: none;
-    border-radius: 4px;
+    border-radius: 5px;
     background: transparent;
-    color: var(--dim);
+    color: var(--fg);
     cursor: pointer;
   }
-  .mbtn :global(svg) {
-    transform: rotate(-90deg);
+  .mbtn.play {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgba(128, 128, 128, 0.2);
   }
   .mbtn:hover:not(:disabled) {
-    background: rgba(128, 128, 128, 0.22);
-    color: var(--fg);
+    background: rgba(128, 128, 128, 0.3);
   }
   .mbtn:disabled {
     opacity: 0.3;
     cursor: default;
   }
-  .muted .val,
-  .muted :global(svg) {
-    color: var(--dim);
+  .mbtn :global(svg) {
+    stroke-width: 2.2;
   }
-  .timer.idle .val,
-  .timer.stopped .val {
-    color: var(--dim);
-  }
-  .timer.work:not(.stopped) .val {
-    color: #ff6b5e;
-  }
-  .timer.break:not(.stopped) .val {
-    color: #4caf50;
-  }
-  .timer.ring {
-    animation: ring 0.5s steps(2) infinite;
-  }
-  @keyframes ring {
-    50% {
-      background: rgba(255, 107, 94, 0.35);
-    }
+  .mbtn.play :global(svg) {
+    fill: currentColor;
   }
 </style>

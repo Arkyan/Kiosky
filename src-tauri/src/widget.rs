@@ -73,6 +73,13 @@ pub fn disable_animations(raw: isize) {
     }
 }
 
+/// Rend `owned` toujours au-dessus de `owner` (l'infobulle au-dessus de la barre flottante).
+pub fn set_owner(owned: isize, owner: isize) {
+    unsafe {
+        SetWindowLongPtrW(HWND(owned as _), GWLP_HWNDPARENT, owner);
+    }
+}
+
 /// Remet la fenêtre au-dessus de tout : un clic sur la barre des tâches la ferait passer dessous.
 pub fn keep_on_top(raw: isize) {
     unsafe {

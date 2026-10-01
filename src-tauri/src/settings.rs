@@ -85,9 +85,6 @@ pub struct Settings {
     pub widget_vertical: bool,
     /// Opacité du fond, de 0.3 à 1
     pub widget_opacity: f32,
-    /// Minuteur de la barre : durées de travail et de pause (minutes), façon Pomodoro
-    pub widget_work_min: u32,
-    pub widget_break_min: u32,
 }
 
 impl Settings {
@@ -144,13 +141,11 @@ impl Default for Settings {
             palette_disabled: vec![],
             widget_enabled: false,
             widget_items: ["cpu", "ram", "net", "time"].iter().map(|s| s.to_string()).collect(),
-            widget_order: ["cpu", "ram", "net", "time", "date", "battery", "ports", "docker", "git", "media", "volume", "timer"].iter().map(|s| s.to_string()).collect(),
+            widget_order: ["cpu", "ram", "net", "time", "date", "battery", "ports", "docker", "git", "media", "volume"].iter().map(|s| s.to_string()).collect(),
             widget_mode: "taskbar-left".into(),
             widget_pos: None,
             widget_vertical: false,
             widget_opacity: 0.85,
-            widget_work_min: 25,
-            widget_break_min: 5,
         }
     }
 }

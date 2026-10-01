@@ -42,6 +42,9 @@
     box: '<path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/>',
     play: '<path d="M8 5.5v13l10-6.5z"/>',
     log: '<path d="M6 3.5h9l3.5 3.5v13.5H6z"/><path d="M9 11h6M9 14.5h6M9 18h4"/>',
+    prev: '<path d="M17.5 6.5v11L9.5 12zM6.5 6.5v11"/>',
+    next: '<path d="M6.5 6.5v11l8-5.5zM17.5 6.5v11"/>',
+    pause: '<path d="M8.5 6v12M15.5 6v12"/>',
   };
 </script>
 
