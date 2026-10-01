@@ -274,7 +274,7 @@
     <div class="ico logo"></div>
     <div class="grow">
       <div class="strong">Kiosk 0.1.0</div>
-      <div class="small muted">Rust + Tauri 2 + Svelte 5 · Réglages dans <span class="mono">%APPDATA%\com.bebou.toolbox</span></div>
+      <div class="small muted">Rust + Tauri 2 + Svelte 5 · Réglages dans <span class="mono">%APPDATA%\com.kiosk.desktop</span></div>
     </div>
   </div>
   <div class="row">

@@ -905,6 +905,24 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
     result.map_err(|e| e.to_string())
 }
 
+/// Les réglages étaient dans %APPDATA%\com.bebou.toolbox (ancien identifiant) : au premier lancement,
+/// on les recopie dans le nouveau dossier. L'ancien reste en place, rien n'est supprimé.
+fn migrate_old_config(new_dir: &std::path::Path) {
+    let Some(old_dir) = new_dir.parent().map(|p| p.join("com.bebou.toolbox")) else { return };
+    if new_dir.join("settings.json").exists() || !old_dir.join("settings.json").exists() {
+        return;
+    }
+    if std::fs::create_dir_all(new_dir).is_err() {
+        return;
+    }
+    for file in ["settings.json", "projects.json", "env-backups.json"] {
+        let from = old_dir.join(file);
+        if from.exists() {
+            let _ = std::fs::copy(&from, new_dir.join(file));
+        }
+    }
+}
+
 /// L'application s'appelait « Toolbox » : son ancienne entrée de démarrage automatique pointerait
 /// vers un exe disparu. On ne retire que la nôtre (lancée avec --minimized), jamais celle d'un autre
 /// logiciel du même nom (JetBrains Toolbox…).
@@ -943,7 +961,9 @@ fn main() {
                 .build(),
         )
         .setup(|app| {
-            let path = app.path().app_config_dir()?.join("settings.json");
+            let dir = app.path().app_config_dir()?;
+            migrate_old_config(&dir);
+            let path = dir.join("settings.json");
             let settings = settings::load(&path);
 
             remove_old_autostart();

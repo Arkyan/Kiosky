@@ -1,4 +1,4 @@
-//! Réglages persistants, stockés en JSON dans %APPDATA%\com.bebou.toolbox\settings.json
+//! Réglages persistants, stockés en JSON dans %APPDATA%\com.kiosk.desktop\settings.json
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

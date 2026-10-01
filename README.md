@@ -75,7 +75,7 @@ src-tauri/src/
   cleaner.rs             Nettoyage (ne suit jamais les liens ni les jonctions)
   ports.rs               Tables TCP/UDP (IP Helper) et arrêt de processus
   startup.rs             Registre, dossiers Démarrage, tâches, journal de performances
-  settings.rs            Réglages JSON dans %APPDATA%\com.bebou.toolbox
+  settings.rs            Réglages JSON dans %APPDATA%\com.kiosk.desktop
 ```
 
 ## Bon à savoir
