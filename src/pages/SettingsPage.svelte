@@ -17,6 +17,9 @@
     { id: "ports", label: "Serveurs locaux", icon: "plug" },
     { id: "docker", label: "Conteneurs Docker", icon: "box" },
     { id: "git", label: "Projet favori (Git)", icon: "branch" },
+    { id: "media", label: "Musique en cours", icon: "volume" },
+    { id: "volume", label: "Volume", icon: "volume" },
+    { id: "timer", label: "Minuteur (Pomodoro)", icon: "clock" },
   ];
 
   // Ordre stable de tous les éléments : cocher ou décocher ne déplace rien, seules les flèches le font.
@@ -223,7 +226,22 @@
             {w.label}
             {#if w.id === "git"}<span class="small muted"> · premier projet favori ⭐ de la page Projets</span>{/if}
             {#if w.id === "battery"}<span class="small muted"> · masquée sur un PC fixe</span>{/if}
+            {#if w.id === "media"}<span class="small muted"> · Spotify, YouTube, VLC… clic : lecture/pause</span>{/if}
+            {#if w.id === "volume"}<span class="small muted"> · molette pour régler</span>{/if}
           </span>
+          {#if w.id === "timer"}
+            <label class="dur small muted" title="Minutes de travail">
+              <input class="field num" type="number" min="1" max="180" value={s.widget_work_min}
+                onchange={(e) => { s.widget_work_min = Math.max(1, Math.min(180, +e.currentTarget.value || 25)); saveSettings(0); }} />
+              min
+            </label>
+            <label class="dur small muted" title="Minutes de pause">
+              pause
+              <input class="field num" type="number" min="1" max="60" value={s.widget_break_min}
+                onchange={(e) => { s.widget_break_min = Math.max(1, Math.min(60, +e.currentTarget.value || 5)); saveSettings(0); }} />
+              min
+            </label>
+          {/if}
           <button class="mini" title="Plus à gauche" disabled={i === 0} onclick={() => moveWidgetItem(w.id, -1)}><Icon name="up_small" size={14} /></button>
           <button class="mini" title="Plus à droite" disabled={i === widgetOrder.length - 1} onclick={() => moveWidgetItem(w.id, 1)}><Icon name="down_small" size={14} /></button>
         </div>
@@ -331,6 +349,18 @@
     display: flex;
     flex-direction: column;
     padding: 10px 18px 12px;
+  }
+  .dur {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-right: 6px;
+  }
+  .num {
+    width: 54px;
+    height: 26px;
+    padding: 0 6px;
+    font-size: 12.5px;
   }
   .whead {
     margin-bottom: 4px;

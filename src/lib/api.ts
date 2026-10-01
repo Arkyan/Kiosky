@@ -29,6 +29,8 @@ export type Settings = {
   widget_pos: [number, number] | null;
   widget_vertical: boolean;
   widget_opacity: number;
+  widget_work_min: number;
+  widget_break_min: number;
   project_roots: string[];
   project_favorites: string[];
   project_opened: Record<string, number>;
@@ -201,6 +203,9 @@ export const api = {
   startDockerDesktop: () => invoke<void>("start_docker_desktop"),
   fitWidget: (width: number, height: number) => invoke<void>("fit_widget", { width, height }),
   taskbarHeight: () => invoke<number | null>("taskbar_height"),
+  getMedia: () => invoke<{ title: string; artist: string; app: string; playing: boolean } | null>("get_media"),
+  mediaControl: (action: "toggle" | "next" | "prev") => invoke<void>("media_control", { action }),
+  getVolume: () => invoke<{ volume: number; muted: boolean }>("get_volume"),
   getBattery: () => invoke<{ present: boolean; percent: number; charging: boolean }>("get_battery"),
   runShell: (cmd: string) => invoke<ShellOutput>("run_shell", { cmd }),
   getIcons: (actions: string[]) => invoke<Record<string, string>>("get_icons", { actions }),

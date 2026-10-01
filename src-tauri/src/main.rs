@@ -11,6 +11,7 @@ mod envvars;
 mod expander;
 mod icons;
 mod launcher;
+mod media;
 mod monitor;
 mod ports;
 mod search;
@@ -250,6 +251,27 @@ fn taskbar_height(app: AppHandle) -> Option<f64> {
 #[tauri::command]
 fn get_battery() -> widget::Battery {
     widget::battery()
+}
+
+#[tauri::command]
+async fn get_media() -> Result<Option<media::Media>, String> {
+    blocking(|| Ok(media::current())).await
+}
+
+#[tauri::command]
+async fn media_control(action: String) -> Result<(), String> {
+    blocking(move || media::control(&action)).await
+}
+
+#[derive(serde::Serialize)]
+struct VolumeState {
+    volume: f32,
+    muted: bool,
+}
+
+#[tauri::command]
+async fn get_volume() -> Result<VolumeState, String> {
+    blocking(|| audio::master().map(|(volume, muted)| VolumeState { volume, muted })).await
 }
 
 /// Menu de l'icône : la pipette n'y figure que si son module est actif.
@@ -883,6 +905,7 @@ fn main() {
                 let _ = handle.emit_to("main", "monitor-sample", sample);
                 let _ = handle.emit_to("main", "monitor-top", top);
                 let _ = handle.emit_to("widget", "monitor-sample", sample);
+                let _ = handle.emit_to("widget", "monitor-top", top);
                 widget_tick(&handle);
             });
 
@@ -970,6 +993,9 @@ fn main() {
             fit_widget,
             taskbar_height,
             get_battery,
+            get_media,
+            media_control,
+            get_volume,
             get_autostart,
             set_autostart,
         ])

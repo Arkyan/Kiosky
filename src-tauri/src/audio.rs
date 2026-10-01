@@ -180,6 +180,18 @@ pub fn state() -> R<MixerState> {
     Ok(MixerState { master, master_muted, apps })
 }
 
+/// Volume général et sourdine, sans parcourir les sessions des applications (rapide).
+pub fn master() -> R<(f32, bool)> {
+    init_com();
+    let ep = endpoint(&default_device()?)?;
+    unsafe {
+        Ok((
+            ep.GetMasterVolumeLevelScalar().map_err(e)?,
+            ep.GetMute().map(|b| b.as_bool()).unwrap_or(false),
+        ))
+    }
+}
+
 pub fn set_master_volume(volume: f32) -> R<()> {
     init_com();
     let ep = endpoint(&default_device()?)?;
