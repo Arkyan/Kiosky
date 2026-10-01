@@ -10,6 +10,7 @@ Rust + Tauri 2 pour la logique, Svelte 5 pour l'interface (style Windows 11, Mic
 | **Pipette** | Raccourci global (`Win+Shift+C` par défaut) : loupe sous la souris, clic = couleur copiée en HEX, RGB ou HSL, historique |
 | **Projets** | Détecte les projets (Git, Node, Rust, PHP, .NET, Android…), branche et modifications non commitées, ouverture dans l'éditeur adapté |
 | **Dossiers** | Un raccourci global par dossier favori (`Ctrl+Shift+1`…), ouvert dans l'Explorateur, le terminal ou un éditeur |
+| **Variables** | PATH et variables utilisateur/système : chemins introuvables et doublons signalés, réordonnancement, annulation de la dernière modification |
 | **Volume** | Volume et sourdine par application, préréglages (Jeu, Réunion, Musique…) |
 | **Moniteur** | CPU, mémoire et réseau en direct (2 min d'historique), espace disque, processus les plus gourmands (avec arrêt), résumé dans l'infobulle et jauge CPU comme icône |
 | **Démarrage** | Programmes lancés avec Windows (registre, dossier Démarrage, tâches planifiées), activation/désactivation, temps de démarrage |
@@ -55,6 +56,7 @@ src-tauri/src/
   expander.rs            Hook clavier + saisie simulée
   audio.rs               Mixeur (API Core Audio, COM)
   projects.rs            Détection des projets, technos, git status
+  envvars.rs             Variables d'environnement (registre), sauvegarde avant chaque écriture
   launcher.rs            « Ouvrir avec » : Explorateur, terminal, VS Code, JetBrains…
   colorpicker.rs         Pipette : hook souris + capture d'écran (GDI)
   monitor.rs             CPU / RAM / réseau / disques

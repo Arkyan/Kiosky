@@ -6,6 +6,7 @@ mod calc;
 mod cleaner;
 mod colorpicker;
 mod converter;
+mod envvars;
 mod expander;
 mod launcher;
 mod monitor;
@@ -431,6 +432,39 @@ async fn open_project(state: State<'_, AppState>, path: String, opener: String) 
     settings::save(&state.path, &s)
 }
 
+fn config_dir(state: &AppState) -> std::path::PathBuf {
+    state.path.parent().map(|p| p.to_path_buf()).unwrap_or_default()
+}
+
+#[tauri::command]
+async fn get_env(state: State<'_, AppState>) -> Result<envvars::EnvState, String> {
+    let dir = config_dir(&state);
+    blocking(move || Ok(envvars::state(&dir))).await
+}
+
+#[tauri::command]
+async fn set_env(state: State<'_, AppState>, machine: bool, name: String, value: String) -> Result<(), String> {
+    let dir = config_dir(&state);
+    blocking(move || envvars::set(&dir, machine, &name, &value)).await
+}
+
+#[tauri::command]
+async fn delete_env(state: State<'_, AppState>, machine: bool, name: String) -> Result<(), String> {
+    let dir = config_dir(&state);
+    blocking(move || envvars::delete(&dir, machine, &name)).await
+}
+
+#[tauri::command]
+async fn undo_env(state: State<'_, AppState>) -> Result<String, String> {
+    let dir = config_dir(&state);
+    blocking(move || envvars::undo(&dir)).await
+}
+
+#[tauri::command]
+async fn check_paths(entries: Vec<String>) -> Result<Vec<envvars::PathCheck>, String> {
+    blocking(move || Ok(envvars::check_paths(&entries))).await
+}
+
 #[tauri::command]
 fn get_known_folders() -> Vec<launcher::KnownFolder> {
     launcher::known_folders()
@@ -583,6 +617,11 @@ fn main() {
             open_url,
             get_openers,
             get_known_folders,
+            get_env,
+            set_env,
+            delete_env,
+            undo_env,
+            check_paths,
             get_projects,
             scan_projects,
             git_status,

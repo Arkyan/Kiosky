@@ -34,6 +34,9 @@ export type Project = {
   editor: string;
 };
 export type GitStatus = { path: string; branch: string | null; changes: number; ahead: number; behind: number };
+export type EnvVar = { name: string; value: string; expand: boolean };
+export type EnvState = { user: EnvVar[]; machine: EnvVar[]; is_admin: boolean; undo: string | null };
+export type PathCheck = { entry: string; expanded: string; exists: boolean };
 export type ScanProgress = { dirs: number; found: number };
 export type FolderShortcut = { name: string; path: string; shortcut: string; open_with: string };
 export type KnownFolder = { name: string; path: string };
@@ -153,6 +156,11 @@ export const api = {
   scanProjects: () => invoke<Project[]>("scan_projects"),
   gitStatus: (paths: string[]) => invoke<GitStatus[]>("git_status", { paths }),
   openProject: (path: string, opener: string) => invoke<void>("open_project", { path, opener }),
+  getEnv: () => invoke<EnvState>("get_env"),
+  setEnv: (machine: boolean, name: string, value: string) => invoke<void>("set_env", { machine, name, value }),
+  deleteEnv: (machine: boolean, name: string) => invoke<void>("delete_env", { machine, name }),
+  undoEnv: () => invoke<string>("undo_env"),
+  checkPaths: (entries: string[]) => invoke<PathCheck[]>("check_paths", { entries }),
   openWith: (id: string, path: string) => invoke<void>("open_with", { id, path }),
   openUrl: (url: string) => invoke<void>("open_url", { url }),
   runAction: (action: string) => invoke<void>("run_action", { action }),

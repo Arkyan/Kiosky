@@ -13,6 +13,7 @@
   import MonitorPage from "./pages/MonitorPage.svelte";
   import FoldersPage from "./pages/FoldersPage.svelte";
   import ProjectsPage from "./pages/ProjectsPage.svelte";
+  import EnvPage from "./pages/EnvPage.svelte";
 
   type Page =
     | "converter"
@@ -25,6 +26,7 @@
     | "ports"
     | "folders"
     | "projects"
+    | "env"
     | "settings";
 
   const nav: { id: Page; label: string; icon: string; group?: string }[] = [
@@ -34,6 +36,7 @@
     { id: "mixer", label: "Volume", icon: "volume" },
     { id: "projects", label: "Projets", icon: "code", group: "Dev" },
     { id: "folders", label: "Dossiers", icon: "folder" },
+    { id: "env", label: "Variables", icon: "variable" },
     { id: "monitor", label: "Moniteur", icon: "activity", group: "Système" },
     { id: "startup", label: "Démarrage", icon: "power" },
     { id: "cleaner", label: "Nettoyage", icon: "broom" },
@@ -108,6 +111,8 @@
             <FoldersPage />
           {:else if page === "projects"}
             <ProjectsPage />
+          {:else if page === "env"}
+            <EnvPage />
           {:else}
             <SettingsPage />
           {/if}
