@@ -94,6 +94,12 @@ fn detect() -> Vec<Opener> {
 
 static OPENERS: OnceLock<Vec<Opener>> = OnceLock::new();
 
+/// Chemin de l'exécutable d'une application (pour afficher son icône).
+pub fn opener_exe(id: &str) -> Option<String> {
+    let o = openers().iter().find(|o| o.id == id)?;
+    o.exe.is_absolute().then(|| o.exe.display().to_string())
+}
+
 /// Applications disponibles (détectées une fois au premier appel).
 pub fn openers() -> &'static [Opener] {
     OPENERS.get_or_init(detect)

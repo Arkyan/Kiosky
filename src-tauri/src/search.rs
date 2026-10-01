@@ -73,12 +73,17 @@ pub fn refresh_apps() {
     }
     std::thread::spawn(|| {
         let apps = load_apps();
-        let mut c = apps_cache().lock().unwrap();
-        if !apps.is_empty() || c.apps.is_empty() {
-            c.apps = apps;
+        let actions: Vec<String> = apps.iter().map(|a| format!("app:{}", a.id)).collect();
+        {
+            let mut c = apps_cache().lock().unwrap();
+            if !apps.is_empty() || c.apps.is_empty() {
+                c.apps = apps;
+            }
+            c.loaded = Some(Instant::now());
+            c.loading = false;
         }
-        c.loaded = Some(Instant::now());
-        c.loading = false;
+        // Icônes prêtes avant que l'utilisateur ne tape quoi que ce soit.
+        crate::icons::prewarm(actions);
     });
 }
 

@@ -20,6 +20,19 @@
   let confirming = $state(-1);
   /** Palette vide : on affiche les éléments les plus utilisés */
   let home = $state(false);
+  /** Vraies icônes (applications, éditeurs, dossiers), gardées pour toute la session */
+  let icons = $state<Record<string, string>>({});
+
+  async function loadIcons(list: ConvResult[]) {
+    const wanted = list.map((r) => r.action).filter((a) => /^(app|run|project|openwith):/.test(a) && !(a in icons));
+    if (!wanted.length) return;
+    try {
+      const got = await api.getIcons(wanted);
+      icons = { ...icons, ...got };
+    } catch {
+      // Pas d'icône : on garde le pictogramme par type.
+    }
+  }
 
   async function loadHome() {
     if (!palette) return;
@@ -29,6 +42,7 @@
       results = r;
       selected = 0;
       home = r.length > 0;
+      loadIcons(r);
     }
   }
 
@@ -58,6 +72,7 @@
           results = r;
           selected = 0;
           home = false;
+          loadIcons(r);
         }
       } finally {
         if (id === seq) loading = false;
@@ -187,7 +202,11 @@
         onclick={() => copy(i)}
       >
         {#if kind}
-          <span class="kind"><Icon name={kind} size={17} /></span>
+          {#if icons[r.action]}
+            <img class="kind real" src={icons[r.action]} alt="" />
+          {:else}
+            <span class="kind"><Icon name={kind} size={17} /></span>
+          {/if}
         {/if}
         <div class="text">
           {#if kind}
@@ -318,6 +337,11 @@
     border-radius: 8px;
     background: var(--accent-soft);
     color: var(--accent);
+  }
+  .kind.real {
+    padding: 2px;
+    background: none;
+    object-fit: contain;
   }
   .launch .value {
     font-size: 14.5px;

@@ -165,6 +165,7 @@ export const api = {
   openUrl: (url: string) => invoke<void>("open_url", { url }),
   runAction: (action: string) => invoke<void>("run_action", { action }),
   paletteHome: () => invoke<ConvResult[]>("palette_home"),
+  getIcons: (actions: string[]) => invoke<Record<string, string>>("get_icons", { actions }),
 
   getAutostart: () => invoke<boolean>("get_autostart"),
   setAutostart: (enabled: boolean) => invoke<void>("set_autostart", { enabled }),

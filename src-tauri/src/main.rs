@@ -8,6 +8,7 @@ mod colorpicker;
 mod converter;
 mod envvars;
 mod expander;
+mod icons;
 mod launcher;
 mod monitor;
 mod ports;
@@ -251,6 +252,12 @@ async fn convert(state: State<'_, AppState>, input: String) -> Result<Vec<conver
     let projects = projects::load_cache(&projects_cache(&state));
     out.extend(search::search(&input, &settings, &projects));
     Ok(out)
+}
+
+/// Icônes des résultats de la palette (action → image PNG en data URL).
+#[tauri::command]
+async fn get_icons(actions: Vec<String>) -> Result<std::collections::HashMap<String, String>, String> {
+    blocking(move || Ok(icons::icons(actions))).await
 }
 
 /// Palette vide : les éléments les plus souvent ouverts.
@@ -729,6 +736,7 @@ fn main() {
             open_with,
             run_action,
             palette_home,
+            get_icons,
             get_autostart,
             set_autostart,
         ])
