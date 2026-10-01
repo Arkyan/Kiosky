@@ -8,6 +8,7 @@ Rust + Tauri 2 pour la logique, Svelte 5 pour l'interface (style Windows 11, Mic
 | **Convertisseur** | Palette ouverte par raccourci global (`Ctrl+Shift+Space` par défaut) : calculs, unités, devises (taux BCE), fuseaux horaires, Base64, URL, JSON, hexa/binaire. `kill 3000` / `port 3000` : arrêter ou ouvrir ce qui écoute sur un port |
 | **Expanseur de texte** | `;mail` → ton adresse, `;sig` → ta signature, `;date` → la date du jour, dans toutes les applications |
 | **Pipette** | Raccourci global (`Win+Shift+C` par défaut) : loupe sous la souris, clic = couleur copiée en HEX, RGB ou HSL, historique |
+| **Dossiers** | Un raccourci global par dossier favori (`Ctrl+Shift+1`…), ouvert dans l'Explorateur, le terminal ou un éditeur |
 | **Volume** | Volume et sourdine par application, préréglages (Jeu, Réunion, Musique…) |
 | **Moniteur** | CPU, mémoire et réseau en direct (2 min d'historique), espace disque, processus les plus gourmands (avec arrêt), résumé dans l'infobulle et jauge CPU comme icône |
 | **Démarrage** | Programmes lancés avec Windows (registre, dossier Démarrage, tâches planifiées), activation/désactivation, temps de démarrage |
@@ -52,6 +53,7 @@ src-tauri/src/
   units.rs / calc.rs     Unités et calculatrice (testés : `cargo test`)
   expander.rs            Hook clavier + saisie simulée
   audio.rs               Mixeur (API Core Audio, COM)
+  launcher.rs            « Ouvrir avec » : Explorateur, terminal, VS Code, JetBrains…
   colorpicker.rs         Pipette : hook souris + capture d'écran (GDI)
   monitor.rs             CPU / RAM / réseau / disques
   cleaner.rs             Nettoyage (ne suit jamais les liens ni les jonctions)

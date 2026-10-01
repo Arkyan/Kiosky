@@ -31,6 +31,14 @@
     up: '<path d="M12 19.5v-15M6 10.5l6-6 6 6"/>',
     stop: '<rect x="6" y="6" width="12" height="12" rx="2.5"/>',
     disk: '<rect x="3.5" y="6.5" width="17" height="11" rx="2.5"/><path d="M16.5 12h.01M7 12h5"/>',
+    terminal: '<rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="m7 9.5 3 2.5-3 2.5M12.5 15H17"/>',
+    code: '<path d="m8.5 7-5 5 5 5M15.5 7l5 5-5 5M13.5 4.5l-3 15"/>',
+    star: '<path d="m12 3.8 2.5 5.1 5.6.8-4 4 .9 5.6-5-2.7-5 2.7.9-5.6-4-4 5.6-.8z"/>',
+    branch: '<circle cx="7" cy="5.5" r="2"/><circle cx="7" cy="18.5" r="2"/><circle cx="17" cy="8.5" r="2"/><path d="M7 7.5v9M17 10.5c0 4-10 2.5-10 6"/>',
+    variable: '<path d="M7.5 4.5c-2 2-3 4.5-3 7.5s1 5.5 3 7.5M16.5 4.5c2 2 3 4.5 3 7.5s-1 5.5-3 7.5"/><path d="m9.5 9 5 6M14.5 9l-5 6"/>',
+    up_small: '<path d="m7 14 5-5 5 5"/>',
+    down_small: '<path d="m7 10 5 5 5-5"/>',
+    undo: '<path d="M9 14 4.5 9.5 9 5"/><path d="M4.5 9.5H14a5.5 5.5 0 0 1 0 11h-3"/>',
   };
 </script>
 

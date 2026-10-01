@@ -24,6 +24,16 @@ pub struct VolumePreset {
     pub rules: Vec<PresetRule>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct FolderShortcut {
+    pub name: String,
+    pub path: String,
+    /// Raccourci global (« Ctrl+Shift+1 »), vide = aucun
+    pub shortcut: String,
+    /// Application d'ouverture : « explorer », « terminal », « vscode »… (voir launcher.rs)
+    pub open_with: String,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Settings {
@@ -48,6 +58,7 @@ pub struct Settings {
     pub clean_folder_names: Vec<String>,
     /// Dossiers dans lesquels les chercher
     pub clean_roots: Vec<String>,
+    pub folder_shortcuts: Vec<FolderShortcut>,
 }
 
 impl Default for Settings {
@@ -72,6 +83,7 @@ impl Default for Settings {
             ports_hide_system: true,
             clean_folder_names: vec!["node_modules".into()],
             clean_roots: vec![],
+            folder_shortcuts: vec![],
         }
     }
 }

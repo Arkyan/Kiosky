@@ -7,6 +7,7 @@ mod cleaner;
 mod colorpicker;
 mod converter;
 mod expander;
+mod launcher;
 mod monitor;
 mod ports;
 mod settings;
@@ -47,26 +48,49 @@ fn toggle_palette(app: &AppHandle) {
     }
 }
 
-/// Enregistre les raccourcis globaux du convertisseur et de la pipette.
-fn register_shortcuts(app: &AppHandle, palette: &str, picker: &str) -> Result<(), String> {
-    if palette.eq_ignore_ascii_case(picker) {
-        return Err("Le convertisseur et la pipette ne peuvent pas avoir le même raccourci".into());
+/// Tous les raccourcis globaux des réglages, avec ce qu'ils déclenchent (pour les messages d'erreur).
+fn shortcut_list(s: &Settings) -> Vec<(String, String)> {
+    let mut list = vec![
+        (s.palette_shortcut.clone(), "le convertisseur".to_string()),
+        (s.picker_shortcut.clone(), "la pipette".to_string()),
+    ];
+    for f in &s.folder_shortcuts {
+        if !f.shortcut.trim().is_empty() {
+            list.push((f.shortcut.clone(), format!("le dossier « {} »", f.name)));
+        }
+    }
+    list
+}
+
+/// Enregistre les raccourcis globaux : convertisseur, pipette et dossiers.
+fn register_shortcuts(app: &AppHandle, s: &Settings) -> Result<(), String> {
+    let list = shortcut_list(s);
+    for (i, (key, what)) in list.iter().enumerate() {
+        let parsed: Shortcut = key.parse().map_err(|_| format!("Raccourci « {key} » invalide pour {what}"))?;
+        if let Some((_, other)) = list[..i].iter().find(|(k, _)| k.parse::<Shortcut>().is_ok_and(|o| o == parsed)) {
+            return Err(format!("« {key} » est utilisé à la fois par {other} et par {what}"));
+        }
     }
     let gs = app.global_shortcut();
     let _ = gs.unregister_all();
-    for shortcut in [palette, picker] {
-        gs.register(shortcut).map_err(|e| {
-            format!("Raccourci « {shortcut} » invalide ou déjà pris par une autre application ({e})")
+    for (key, what) in &list {
+        gs.register(key.as_str()).map_err(|e| {
+            format!("Raccourci « {key} » ({what}) déjà pris par une autre application ou par Windows ({e})")
         })?;
     }
     Ok(())
 }
 
 fn on_shortcut(app: &AppHandle, shortcut: &Shortcut) {
-    let picker = app.state::<AppState>().settings.lock().unwrap().picker_shortcut.clone();
-    if picker.parse::<Shortcut>().is_ok_and(|p| &p == shortcut) {
+    let s = app.state::<AppState>().settings.lock().unwrap().clone();
+    let is = |key: &str| key.parse::<Shortcut>().is_ok_and(|k| &k == shortcut);
+    if is(&s.picker_shortcut) {
         start_color_pick(app, false);
-    } else {
+    } else if let Some(f) = s.folder_shortcuts.iter().find(|f| !f.shortcut.is_empty() && is(&f.shortcut)) {
+        if let Err(e) = launcher::open_with(&f.open_with, &f.path) {
+            eprintln!("Raccourci de dossier : {e}");
+        }
+    } else if is(&s.palette_shortcut) {
         toggle_palette(app);
     }
 }
@@ -189,9 +213,9 @@ fn get_settings(state: State<'_, AppState>) -> Settings {
 #[tauri::command]
 fn save_settings(app: AppHandle, state: State<'_, AppState>, mut settings: Settings) -> Result<(), String> {
     let old = state.settings.lock().unwrap().clone();
-    if old.palette_shortcut != settings.palette_shortcut || old.picker_shortcut != settings.picker_shortcut {
-        if let Err(e) = register_shortcuts(&app, &settings.palette_shortcut, &settings.picker_shortcut) {
-            let _ = register_shortcuts(&app, &old.palette_shortcut, &old.picker_shortcut);
+    if shortcut_list(&old) != shortcut_list(&settings) {
+        if let Err(e) = register_shortcuts(&app, &settings) {
+            let _ = register_shortcuts(&app, &old);
             return Err(e);
         }
     }
@@ -360,6 +384,21 @@ async fn kill_processes(pids: Vec<u32>) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_known_folders() -> Vec<launcher::KnownFolder> {
+    launcher::known_folders()
+}
+
+#[tauri::command]
+fn get_openers() -> Vec<launcher::Opener> {
+    launcher::openers().to_vec()
+}
+
+#[tauri::command]
+async fn open_with(id: String, path: String) -> Result<(), String> {
+    blocking(move || launcher::open_with(&id, &path)).await
+}
+
+#[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
     util::open_local_url(&url)
 }
@@ -419,11 +458,11 @@ fn main() {
 
             expander::start();
             expander::configure(settings.expander_enabled, &settings.snippets);
-            let (palette_key, picker_key) = (settings.palette_shortcut.clone(), settings.picker_shortcut.clone());
+            let initial = settings.clone();
 
             app.manage(AppState { settings: Mutex::new(settings), path });
             // Après manage() : le gestionnaire de raccourcis lit les réglages.
-            if let Err(e) = register_shortcuts(app.handle(), &palette_key, &picker_key) {
+            if let Err(e) = register_shortcuts(app.handle(), &initial) {
                 eprintln!("{e}");
             }
             build_tray(app.handle())?;
@@ -494,6 +533,9 @@ fn main() {
             get_monitor,
             kill_processes,
             open_url,
+            get_openers,
+            get_known_folders,
+            open_with,
             run_action,
             get_autostart,
             set_autostart,

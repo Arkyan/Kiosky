@@ -19,7 +19,11 @@ export type Settings = {
   ports_hide_system: boolean;
   clean_folder_names: string[];
   clean_roots: string[];
+  folder_shortcuts: FolderShortcut[];
 };
+export type FolderShortcut = { name: string; path: string; shortcut: string; open_with: string };
+export type KnownFolder = { name: string; path: string };
+export type Opener = { id: string; name: string; kind: "explorer" | "terminal" | "editor" };
 export type ColorFormat = "hex" | "rgb" | "hsl";
 
 export type PickerFrame = { grid: number; pixels: number[]; x: number; y: number };
@@ -129,6 +133,9 @@ export const api = {
 
   getMonitor: () => invoke<MonitorState>("get_monitor"),
   killProcesses: (pids: number[]) => invoke<void>("kill_processes", { pids }),
+  getOpeners: () => invoke<Opener[]>("get_openers"),
+  getKnownFolders: () => invoke<KnownFolder[]>("get_known_folders"),
+  openWith: (id: string, path: string) => invoke<void>("open_with", { id, path }),
   openUrl: (url: string) => invoke<void>("open_url", { url }),
   runAction: (action: string) => invoke<void>("run_action", { action }),
 
