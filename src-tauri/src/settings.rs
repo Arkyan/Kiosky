@@ -1,6 +1,7 @@
 //! Réglages persistants, stockés en JSON dans %APPDATA%\com.bebou.toolbox\settings.json
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -59,6 +60,11 @@ pub struct Settings {
     /// Dossiers dans lesquels les chercher
     pub clean_roots: Vec<String>,
     pub folder_shortcuts: Vec<FolderShortcut>,
+    /// Dossiers où chercher les projets (tous les disques si vide)
+    pub project_roots: Vec<String>,
+    pub project_favorites: Vec<String>,
+    /// Dernière ouverture de chaque projet depuis Toolbox (chemin → secondes Unix)
+    pub project_opened: HashMap<String, u64>,
 }
 
 impl Default for Settings {
@@ -84,6 +90,9 @@ impl Default for Settings {
             clean_folder_names: vec!["node_modules".into()],
             clean_roots: vec![],
             folder_shortcuts: vec![],
+            project_roots: vec![],
+            project_favorites: vec![],
+            project_opened: HashMap::new(),
         }
     }
 }

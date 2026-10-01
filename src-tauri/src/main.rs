@@ -10,6 +10,7 @@ mod expander;
 mod launcher;
 mod monitor;
 mod ports;
+mod projects;
 mod settings;
 mod startup;
 mod units;
@@ -219,8 +220,9 @@ fn save_settings(app: AppHandle, state: State<'_, AppState>, mut settings: Setti
             return Err(e);
         }
     }
-    // Compteur tenu par Rust : l'interface peut en avoir une copie périmée.
+    // Valeurs tenues par Rust : l'interface peut en avoir une copie périmée.
     settings.cleaned_total = old.cleaned_total;
+    settings.project_opened = old.project_opened.clone();
     if let Some(tray) = app.tray_by_id("toolbox") {
         if old.monitor_tooltip && !settings.monitor_tooltip {
             let _ = tray.set_tooltip(Some("Toolbox"));
@@ -383,6 +385,52 @@ async fn kill_processes(pids: Vec<u32>) -> Result<(), String> {
     .await
 }
 
+fn projects_cache(state: &AppState) -> std::path::PathBuf {
+    state.path.with_file_name("projects.json")
+}
+
+/// Projets connus (cache), avec leurs infos rafraîchies : instantané, sans parcourir les disques.
+#[tauri::command]
+async fn get_projects(state: State<'_, AppState>) -> Result<Vec<projects::Project>, String> {
+    let cache = projects_cache(&state);
+    blocking(move || {
+        let list = projects::refresh(&projects::load_cache(&cache));
+        projects::save_cache(&cache, &list);
+        Ok(list)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn scan_projects(app: AppHandle, state: State<'_, AppState>) -> Result<Vec<projects::Project>, String> {
+    let roots = state.settings.lock().unwrap().project_roots.clone();
+    let cache = projects_cache(&state);
+    blocking(move || {
+        let list = projects::scan(&roots, |p| {
+            let _ = app.emit_to("main", "projects-progress", p);
+        });
+        projects::save_cache(&cache, &list);
+        Ok(list)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn git_status(paths: Vec<String>) -> Result<Vec<projects::GitStatus>, String> {
+    blocking(move || Ok(projects::git_status(&paths))).await
+}
+
+/// Ouvre un projet et retient la date, pour trier par « récemment ouverts ».
+#[tauri::command]
+async fn open_project(state: State<'_, AppState>, path: String, opener: String) -> Result<(), String> {
+    let p = path.clone();
+    blocking(move || launcher::open_with(&opener, &p)).await?;
+    let mut s = state.settings.lock().unwrap();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    s.project_opened.insert(path, now);
+    settings::save(&state.path, &s)
+}
+
 #[tauri::command]
 fn get_known_folders() -> Vec<launcher::KnownFolder> {
     launcher::known_folders()
@@ -535,6 +583,10 @@ fn main() {
             open_url,
             get_openers,
             get_known_folders,
+            get_projects,
+            scan_projects,
+            git_status,
+            open_project,
             open_with,
             run_action,
             get_autostart,

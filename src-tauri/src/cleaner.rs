@@ -183,7 +183,7 @@ fn targets() -> Vec<Target> {
     ]
 }
 
-fn is_link(meta: &Metadata) -> bool {
+pub fn is_link(meta: &Metadata) -> bool {
     meta.file_type().is_symlink() || meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
 }
 
@@ -328,7 +328,7 @@ pub struct FoundFolder {
 
 /// Dossiers où l'on ne descend jamais : supprimer leurs node_modules casserait Windows,
 /// des applications installées ou des outils (extensions VS Code, paquets npm globaux…).
-const NEVER_ENTER: &[&str] = &[
+pub const NEVER_ENTER: &[&str] = &[
     // Windows et applications installées
     "windows", "program files", "program files (x86)", "programdata", "appdata", "$recycle.bin",
     "system volume information", "recovery", "$winreagent", "$windows.~bt", "$windows.~ws",
@@ -391,7 +391,7 @@ fn find_in(dir: &Path, names: &[String], depth: usize, c: &Counters, out: &mut V
     }
 }
 
-fn unix(t: SystemTime) -> u64 {
+pub fn unix(t: SystemTime) -> u64 {
     t.duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 

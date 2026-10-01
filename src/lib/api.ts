@@ -20,7 +20,21 @@ export type Settings = {
   clean_folder_names: string[];
   clean_roots: string[];
   folder_shortcuts: FolderShortcut[];
+  project_roots: string[];
+  project_favorites: string[];
+  project_opened: Record<string, number>;
 };
+export type Project = {
+  name: string;
+  path: string;
+  tags: string[];
+  git: boolean;
+  branch: string | null;
+  modified: number;
+  editor: string;
+};
+export type GitStatus = { path: string; branch: string | null; changes: number; ahead: number; behind: number };
+export type ScanProgress = { dirs: number; found: number };
 export type FolderShortcut = { name: string; path: string; shortcut: string; open_with: string };
 export type KnownFolder = { name: string; path: string };
 export type Opener = { id: string; name: string; kind: "explorer" | "terminal" | "editor" };
@@ -135,6 +149,10 @@ export const api = {
   killProcesses: (pids: number[]) => invoke<void>("kill_processes", { pids }),
   getOpeners: () => invoke<Opener[]>("get_openers"),
   getKnownFolders: () => invoke<KnownFolder[]>("get_known_folders"),
+  getProjects: () => invoke<Project[]>("get_projects"),
+  scanProjects: () => invoke<Project[]>("scan_projects"),
+  gitStatus: (paths: string[]) => invoke<GitStatus[]>("git_status", { paths }),
+  openProject: (path: string, opener: string) => invoke<void>("open_project", { path, opener }),
   openWith: (id: string, path: string) => invoke<void>("open_with", { id, path }),
   openUrl: (url: string) => invoke<void>("open_url", { url }),
   runAction: (action: string) => invoke<void>("run_action", { action }),
