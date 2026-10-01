@@ -54,11 +54,15 @@
   onMount(() => {
     loadSettings().catch((e) => (loadError = String(e)));
     // La palette peut ouvrir une page (« nettoyage », « ports »…).
+    const unSettings = listen("settings-changed", () => loadSettings());
     const un = listen<string>("navigate", (e) => {
       const target = e.payload as Page;
       if (target === "settings" || nav.some((n) => n.id === target)) page = target;
     });
-    return () => un.then((f) => f());
+    return () => {
+      un.then((f) => f());
+      unSettings.then((f) => f());
+    };
   });
 </script>
 

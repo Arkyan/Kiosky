@@ -73,6 +73,16 @@ pub struct Settings {
     pub disabled_modules: Vec<String>,
     /// Sources de la palette désactivées (« apps », « web », « shell »…)
     pub palette_disabled: Vec<String>,
+    pub widget_enabled: bool,
+    /// Éléments affichés, dans l'ordre : « cpu », « ram », « net », « time »…
+    pub widget_items: Vec<String>,
+    /// « free » (déplaçable), « taskbar-left » ou « taskbar-right »
+    pub widget_mode: String,
+    /// Position en mode libre (pixels physiques), retenue après un déplacement
+    pub widget_pos: Option<(i32, i32)>,
+    pub widget_vertical: bool,
+    /// Opacité du fond, de 0.3 à 1
+    pub widget_opacity: f32,
 }
 
 impl Settings {
@@ -127,6 +137,12 @@ impl Default for Settings {
             shell_history: vec![],
             disabled_modules: vec![],
             palette_disabled: vec![],
+            widget_enabled: false,
+            widget_items: ["cpu", "ram", "net", "time"].iter().map(|s| s.to_string()).collect(),
+            widget_mode: "taskbar-left".into(),
+            widget_pos: None,
+            widget_vertical: false,
+            widget_opacity: 0.85,
         }
     }
 }

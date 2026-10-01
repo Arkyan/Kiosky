@@ -18,6 +18,8 @@ Rust + Tauri 2 pour la logique, Svelte 5 pour l'interface (style Windows 11, Mic
 | **Nettoyage** | Temp, caches des navigateurs, rapports d'erreur, Windows Update, caches npm/pip, corbeille, avec la place gagnée. Recherche de dossiers par nom (`node_modules`, `target`, `.venv`…) dans les dossiers choisis |
 | **Ports** | Qui écoute sur quel port (« le port 3000 est-il libre ? »), processus propriétaire, bouton pour l'arrêter. Les ports de Windows peuvent être masqués |
 
+**Barre flottante** (Réglages → Barre flottante) : petite barre toujours visible, posée sur la barre des tâches (à gauche ou à droite) ou déplaçable, avec les éléments choisis : CPU, RAM, réseau, heure, date, batterie, serveurs locaux, conteneurs Docker, état Git du projet favori. Elle se cache quand une application est en plein écran.
+
 Chaque module peut être désactivé dans Réglages → Modules (il disparaît de l'interface et ne tourne plus en arrière-plan), et chaque source de la palette dans Réglages → Palette.
 
 ## Prérequis (une seule fois)
@@ -52,6 +54,7 @@ src/                     Interface Svelte
   lib/                   Composants partagés, appels à Rust (api.ts)
   Palette.svelte         Fenêtre flottante du convertisseur
   Picker.svelte          Loupe de la pipette
+  Widget.svelte          Barre flottante
 src-tauri/src/
   main.rs                Fenêtres, zone de notification, raccourci, commandes
   search.rs              Recherche de la palette (Get-StartApps, score, usage)
@@ -63,6 +66,7 @@ src-tauri/src/
   projects.rs            Détection des projets, technos, git status
   envvars.rs             Variables d'environnement (registre), sauvegarde avant chaque écriture
   containers.rs          WSL (wsl.exe) et Docker (CLI docker)
+  widget.rs              Barre flottante : placement sur la barre des tâches, premier plan, plein écran
   launcher.rs            « Ouvrir avec » : Explorateur, terminal, VS Code, JetBrains…
   colorpicker.rs         Pipette : hook souris + capture d'écran (GDI)
   monitor.rs             CPU / RAM / réseau / disques

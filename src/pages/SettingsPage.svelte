@@ -7,6 +7,40 @@
   import { store, saveSettings } from "../lib/settings.svelte";
   import { MODULES, PALETTE_SOURCES } from "../lib/modules";
 
+  const WIDGET_ITEMS: { id: string; label: string; icon: string }[] = [
+    { id: "cpu", label: "Processeur", icon: "activity" },
+    { id: "ram", label: "Mémoire", icon: "activity" },
+    { id: "net", label: "Réseau ↓↑", icon: "globe" },
+    { id: "time", label: "Heure", icon: "clock" },
+    { id: "date", label: "Date", icon: "clock" },
+    { id: "battery", label: "Batterie", icon: "bolt" },
+    { id: "ports", label: "Serveurs locaux", icon: "plug" },
+    { id: "docker", label: "Conteneurs Docker", icon: "box" },
+    { id: "git", label: "Projet favori (Git)", icon: "branch" },
+  ];
+
+  function toggleWidgetItem(id: string, on: boolean) {
+    const cur = s.widget_items.filter((x) => x !== id);
+    s.widget_items = on ? [...cur, id] : cur;
+    saveSettings(0);
+  }
+
+  function moveWidgetItem(id: string, d: number) {
+    const list = [...s.widget_items];
+    const i = list.indexOf(id);
+    const j = i + d;
+    if (i < 0 || j < 0 || j >= list.length) return;
+    [list[i], list[j]] = [list[j], list[i]];
+    s.widget_items = list;
+    saveSettings(0);
+  }
+
+  // Éléments cochés dans l'ordre choisi, puis les autres.
+  const widgetOrder = $derived([
+    ...s.widget_items.map((id) => WIDGET_ITEMS.find((w) => w.id === id)).filter((w) => !!w),
+    ...WIDGET_ITEMS.filter((w) => !s.widget_items.includes(w.id)),
+  ] as { id: string; label: string; icon: string }[]);
+
   function toggleIn(list: "disabled_modules" | "palette_disabled", id: string, enabled: boolean) {
     const cur = s[list].filter((x) => x !== id);
     s[list] = enabled ? cur : [...cur, id];
@@ -125,6 +159,75 @@
   </div>
 </div>
 
+<h2>Barre flottante</h2>
+<p class="small muted intro">Une petite barre toujours visible, posée sur la barre des tâches ou où tu veux. Double-clic dessus : ouvre le Moniteur.</p>
+<div class="card group">
+  <div class="row">
+    <div class="ico"><Icon name="activity" size={18} /></div>
+    <div class="grow">
+      <div class="strong">Afficher la barre flottante</div>
+      <div class="small muted">Elle se cache toute seule quand une application est en plein écran.</div>
+    </div>
+    <Toggle checked={s.widget_enabled} label="Afficher la barre flottante" onchange={(v) => { s.widget_enabled = v; saveSettings(0); }} />
+  </div>
+  {#if s.widget_enabled}
+    <div class="row">
+      <div class="ico"><Icon name="folder" size={18} /></div>
+      <div class="grow">
+        <div class="strong">Position</div>
+        <div class="small muted">
+          {s.widget_mode === "free" ? "Déplace-la à la souris : sa place est retenue." : "Posée dans la barre des tâches, au-dessus d'elle."}
+        </div>
+      </div>
+      <div class="seg-ctrl">
+        <button class:active={s.widget_mode === "taskbar-left"} onclick={() => { s.widget_mode = "taskbar-left"; saveSettings(0); }}>Barre des tâches ◧</button>
+        <button class:active={s.widget_mode === "taskbar-right"} onclick={() => { s.widget_mode = "taskbar-right"; saveSettings(0); }}>Barre des tâches ◨</button>
+        <button class:active={s.widget_mode === "free"} onclick={() => { s.widget_mode = "free"; saveSettings(0); }}>Libre</button>
+      </div>
+    </div>
+    {#if s.widget_mode === "free"}
+      <div class="row">
+        <div class="ico"><Icon name="settings" size={18} /></div>
+        <div class="grow"><div class="strong">Disposition verticale</div></div>
+        <Toggle checked={s.widget_vertical} label="Disposition verticale" onchange={(v) => { s.widget_vertical = v; saveSettings(0); }} />
+      </div>
+    {/if}
+    <div class="row">
+      <div class="ico"><Icon name="sparkle" size={18} /></div>
+      <div class="grow">
+        <div class="strong">Opacité du fond</div>
+        <input
+          type="range"
+          min="30"
+          max="100"
+          value={Math.round(s.widget_opacity * 100)}
+          style:--p={`${((s.widget_opacity * 100 - 30) / 70) * 100}%`}
+          oninput={(e) => { s.widget_opacity = +e.currentTarget.value / 100; saveSettings(150); }}
+        />
+      </div>
+      <span class="small muted pct">{Math.round(s.widget_opacity * 100)} %</span>
+    </div>
+    <div class="witems">
+      {#each widgetOrder as w (w.id)}
+        {@const on = s.widget_items.includes(w.id)}
+        {@const i = s.widget_items.indexOf(w.id)}
+        <div class="witem" class:off={!on}>
+          <Toggle checked={on} label={w.label} onchange={(v) => toggleWidgetItem(w.id, v)} />
+          <Icon name={w.icon} size={15} />
+          <span class="grow">{w.label}</span>
+          {#if on}
+            <button class="mini" title="Plus à gauche" disabled={i === 0} onclick={() => moveWidgetItem(w.id, -1)}><Icon name="up_small" size={14} /></button>
+            <button class="mini" title="Plus à droite" disabled={i === s.widget_items.length - 1} onclick={() => moveWidgetItem(w.id, 1)}><Icon name="down_small" size={14} /></button>
+          {/if}
+        </div>
+      {/each}
+    </div>
+  {/if}
+</div>
+{#if s.widget_enabled && s.widget_items.includes("git") && !s.project_favorites.length}
+  <p class="small muted intro2">Pour l'état Git, mets un projet en favori (⭐) dans la page Projets.</p>
+{/if}
+
 <h2>Modules</h2>
 <p class="small muted intro">Un module désactivé disparaît de la barre latérale et de la palette, et arrête ce qu'il fait en arrière-plan.</p>
 <div class="card toggles">
@@ -177,6 +280,75 @@
 <style>
   .intro {
     margin: -6px 0 10px;
+  }
+  .intro2 {
+    margin: 8px 2px 0;
+  }
+  .seg-ctrl {
+    display: flex;
+    padding: 3px;
+    border-radius: 8px;
+    border: 1px solid var(--stroke);
+    background: var(--card-2);
+  }
+  .seg-ctrl button {
+    height: 26px;
+    padding: 0 10px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    font-size: 12.5px;
+    color: var(--text-2);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .seg-ctrl button.active {
+    background: var(--card);
+    color: var(--text);
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  }
+  .pct {
+    min-width: 40px;
+    text-align: right;
+  }
+  .witems {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 16px;
+    padding: 8px 18px 12px;
+  }
+  .witem {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 36px;
+    color: var(--text-2);
+  }
+  .witem:not(.off) {
+    color: var(--text);
+  }
+  .witem .grow {
+    font-size: 13px;
+  }
+  .mini {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-3);
+    cursor: pointer;
+  }
+  .mini:hover:not(:disabled) {
+    background: var(--fill-hover);
+    color: var(--text);
+  }
+  .mini:disabled {
+    opacity: 0.25;
+    cursor: default;
   }
   .toggles {
     display: grid;

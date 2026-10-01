@@ -3,14 +3,18 @@
   import Shell from "./Shell.svelte";
   import Palette from "./Palette.svelte";
   import Picker from "./Picker.svelte";
+  import Widget from "./Widget.svelte";
 
   // Une seule application Svelte pour toutes les fenêtres : on regarde laquelle nous héberge.
   const label = getCurrentWindow().label;
   const isPalette = location.hash === "#palette" || label === "palette";
   const isPicker = location.hash === "#picker" || label === "picker";
+  const isWidget = location.hash === "#widget" || label === "widget";
 </script>
 
-{#if isPicker}
+{#if isWidget}
+  <Widget />
+{:else if isPicker}
   <Picker />
 {:else if isPalette}
   <Palette />

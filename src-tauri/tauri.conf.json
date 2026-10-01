@@ -62,6 +62,21 @@
         "skipTaskbar": true,
         "focus": false,
         "focusable": false
+      },
+      {
+        "label": "widget",
+        "title": "Barre flottante",
+        "url": "index.html#widget",
+        "width": 320,
+        "height": 40,
+        "visible": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "focus": false
       }
     ],
     "security": {

@@ -22,6 +22,12 @@ export type Settings = {
   folder_shortcuts: FolderShortcut[];
   disabled_modules: string[];
   palette_disabled: string[];
+  widget_enabled: boolean;
+  widget_items: string[];
+  widget_mode: "free" | "taskbar-left" | "taskbar-right";
+  widget_pos: [number, number] | null;
+  widget_vertical: boolean;
+  widget_opacity: number;
   project_roots: string[];
   project_favorites: string[];
   project_opened: Record<string, number>;
@@ -192,6 +198,9 @@ export const api = {
   dockerAction: (ids: string[], action: string) => invoke<void>("docker_action", { ids, action }),
   dockerLogs: (id: string) => invoke<string>("docker_logs", { id }),
   startDockerDesktop: () => invoke<void>("start_docker_desktop"),
+  fitWidget: (width: number, height: number) => invoke<void>("fit_widget", { width, height }),
+  taskbarHeight: () => invoke<number | null>("taskbar_height"),
+  getBattery: () => invoke<{ present: boolean; percent: number; charging: boolean }>("get_battery"),
   runShell: (cmd: string) => invoke<ShellOutput>("run_shell", { cmd }),
   getIcons: (actions: string[]) => invoke<Record<string, string>>("get_icons", { actions }),
 

@@ -20,15 +20,17 @@ mod shell;
 mod startup;
 mod units;
 mod util;
+mod widget;
 
 use settings::{AppState, Settings};
 use std::cell::Cell;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::image::Image;
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, State, WindowEvent};
+use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, State, WindowEvent};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
@@ -158,6 +160,107 @@ fn start_color_pick(app: &AppHandle, from_main: bool) {
     });
 }
 
+// ───────────────────────────── Barre flottante ─────────────────────────────
+
+/// Masquée parce qu'une application est en plein écran (réaffichée ensuite).
+static WIDGET_HIDDEN_FULLSCREEN: AtomicBool = AtomicBool::new(false);
+/// Compteur de déplacements : on n'enregistre la position qu'une fois la souris arrêtée.
+static WIDGET_MOVES: AtomicU64 = AtomicU64::new(0);
+
+fn widget_raw(app: &AppHandle) -> Option<isize> {
+    app.get_webview_window("widget")?.hwnd().ok().map(|h| h.0 as isize)
+}
+
+/// Afficher / masquer depuis le menu de l'icône.
+fn toggle_widget(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let s = {
+        let mut s = state.settings.lock().unwrap();
+        s.widget_enabled = !s.widget_enabled;
+        let _ = settings::save(&state.path, &s);
+        s.clone()
+    };
+    apply_widget(app, &s);
+    let _ = app.emit("settings-changed", ());
+}
+
+/// Montre ou cache la fenêtre selon les réglages, et met le menu de l'icône à jour.
+fn apply_widget(app: &AppHandle, s: &Settings) {
+    if let Some(w) = app.get_webview_window("widget") {
+        if s.widget_enabled {
+            // L'interface se redimensionne puis appelle fit_widget, qui l'affiche à la bonne place.
+            let _ = app.emit_to("widget", "widget-config", ());
+        } else {
+            let _ = w.hide();
+        }
+    }
+    if let (Some(tray), Ok(menu)) = (app.tray_by_id("toolbox"), tray_menu(app, s)) {
+        let _ = tray.set_menu(Some(menu));
+    }
+}
+
+/// Appelé chaque seconde : premier plan au-dessus de la barre des tâches, masquage en plein écran.
+fn widget_tick(app: &AppHandle) {
+    let enabled = app.state::<AppState>().settings.lock().unwrap().widget_enabled;
+    let (Some(w), Some(raw)) = (app.get_webview_window("widget"), widget_raw(app)) else { return };
+    if !enabled {
+        return;
+    }
+    if widget::fullscreen_app(raw) {
+        if w.is_visible().unwrap_or(false) {
+            let _ = w.hide();
+            WIDGET_HIDDEN_FULLSCREEN.store(true, Ordering::Relaxed);
+        }
+        return;
+    }
+    if WIDGET_HIDDEN_FULLSCREEN.swap(false, Ordering::Relaxed) {
+        let _ = w.show();
+    }
+    widget::keep_on_top(raw);
+}
+
+/// Taille voulue par l'interface (pixels CSS), puis placement selon le mode, puis affichage.
+#[tauri::command]
+fn fit_widget(app: AppHandle, state: State<'_, AppState>, width: f64, height: f64) -> Result<(), String> {
+    let s = state.settings.lock().unwrap().clone();
+    let w = app.get_webview_window("widget").ok_or("Fenêtre introuvable")?;
+    if !s.widget_enabled {
+        let _ = w.hide();
+        return Ok(());
+    }
+    w.set_size(LogicalSize::new(width.ceil(), height.ceil())).map_err(|e| e.to_string())?;
+    let size = w.outer_size().map_err(|e| e.to_string())?;
+    let pos = widget::position(&s.widget_mode, size.width as i32, size.height as i32)
+        .or(s.widget_pos)
+        .or_else(|| {
+            // Première fois en mode libre : en haut à droite de l'écran principal.
+            let m = w.primary_monitor().ok()??;
+            Some((m.position().x + m.size().width as i32 - size.width as i32 - 24, m.position().y + 24))
+        });
+    if let Some((x, y)) = pos {
+        let _ = w.set_position(PhysicalPosition::new(x, y));
+    }
+    if !WIDGET_HIDDEN_FULLSCREEN.load(Ordering::Relaxed) && !w.is_visible().unwrap_or(false) {
+        let _ = w.show();
+    }
+    if let Some(raw) = widget_raw(&app) {
+        widget::keep_on_top(raw);
+    }
+    Ok(())
+}
+
+/// Hauteur de la barre des tâches en pixels CSS (pour s'y loger proprement).
+#[tauri::command]
+fn taskbar_height(app: AppHandle) -> Option<f64> {
+    let scale = app.get_webview_window("widget")?.scale_factor().ok()?;
+    widget::taskbar_height().map(|h| h as f64 / scale)
+}
+
+#[tauri::command]
+fn get_battery() -> widget::Battery {
+    widget::battery()
+}
+
 /// Menu de l'icône : la pipette n'y figure que si son module est actif.
 fn tray_menu(app: &AppHandle, s: &Settings) -> tauri::Result<Menu<tauri::Wry>> {
     let menu = Menu::new(app)?;
@@ -166,6 +269,8 @@ fn tray_menu(app: &AppHandle, s: &Settings) -> tauri::Result<Menu<tauri::Wry>> {
     if s.module_on("color") {
         menu.append(&MenuItem::with_id(app, "picker", "Pipette de couleur", true, None::<&str>)?)?;
     }
+    let label = if s.widget_enabled { "Masquer la barre flottante" } else { "Afficher la barre flottante" };
+    menu.append(&MenuItem::with_id(app, "widget", label, true, None::<&str>)?)?;
     menu.append(&PredefinedMenuItem::separator(app)?)?;
     menu.append(&MenuItem::with_id(app, "quit", "Quitter", true, None::<&str>)?)?;
     Ok(menu)
@@ -183,6 +288,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             "open" => show_main(app),
             "palette" => toggle_palette(app),
             "picker" => start_color_pick(app, false),
+            "widget" => toggle_widget(app),
             "quit" => app.exit(0),
             _ => {}
         })
@@ -248,9 +354,16 @@ fn save_settings(app: AppHandle, state: State<'_, AppState>, mut settings: Setti
             }
         }
     }
+    // Position tenue par Rust (enregistrée au déplacement de la fenêtre).
+    settings.widget_pos = old.widget_pos;
     expander::configure(settings.expander_active(), &settings.snippets);
     settings::save(&state.path, &settings)?;
-    *state.settings.lock().unwrap() = settings;
+    let widget_changed = (old.widget_enabled, &old.widget_items, &old.widget_mode, old.widget_vertical, old.widget_opacity)
+        != (settings.widget_enabled, &settings.widget_items, &settings.widget_mode, settings.widget_vertical, settings.widget_opacity);
+    *state.settings.lock().unwrap() = settings.clone();
+    if widget_changed {
+        apply_widget(&app, &settings);
+    }
     Ok(())
 }
 
@@ -772,6 +885,8 @@ fn main() {
                 }
                 let _ = handle.emit_to("main", "monitor-sample", sample);
                 let _ = handle.emit_to("main", "monitor-top", top);
+                let _ = handle.emit_to("widget", "monitor-sample", sample);
+                widget_tick(&handle);
             });
 
             // Lancé au démarrage de Windows → reste discret dans la zone de notification.
@@ -788,6 +903,23 @@ fn main() {
             }
             WindowEvent::Focused(false) if window.label() == "palette" => {
                 let _ = window.hide();
+            }
+            WindowEvent::Moved(pos) if window.label() == "widget" => {
+                let app = window.app_handle().clone();
+                let (x, y) = (pos.x, pos.y);
+                let id = WIDGET_MOVES.fetch_add(1, Ordering::Relaxed) + 1;
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(600));
+                    if WIDGET_MOVES.load(Ordering::Relaxed) != id {
+                        return; // encore en mouvement
+                    }
+                    let state = app.state::<AppState>();
+                    let mut s = state.settings.lock().unwrap();
+                    if s.widget_mode == "free" && s.widget_pos != Some((x, y)) {
+                        s.widget_pos = Some((x, y));
+                        let _ = settings::save(&state.path, &s);
+                    }
+                });
             }
             _ => {}
         })
@@ -838,6 +970,9 @@ fn main() {
             palette_home,
             get_icons,
             run_shell,
+            fit_widget,
+            taskbar_height,
+            get_battery,
             get_autostart,
             set_autostart,
         ])
