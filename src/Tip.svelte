@@ -22,6 +22,9 @@
   {#each lines as line, i}
     {#if line === ""}
       <div class="gap"></div>
+    {:else if line.includes("\t")}
+      {@const [name, value] = line.split("\t")}
+      <div class="row"><span class="name">{name}</span><span class="value">{value}</span></div>
     {:else}
       <div class:first={i === 0} class:hint={line.startsWith("Clic") || line.startsWith("Molette")}>{line}</div>
     {/if}
@@ -57,6 +60,21 @@
   .tip div {
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  /* Deux colonnes : nom à gauche, valeur alignée à droite */
+  .row {
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+  }
+  .name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0.75;
+  }
+  .value {
+    flex: none;
+    font-weight: 600;
   }
   .first {
     font-weight: 600;

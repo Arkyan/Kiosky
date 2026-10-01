@@ -85,7 +85,7 @@
     if (!projects.length) projects = await api.getProjects().catch(() => []);
     const [st] = await api.gitStatus([fav]).catch(() => []);
     const name = fav.split(/[\\/]/).filter(Boolean).pop() ?? fav;
-    git = { name, path: fav, branch: st?.branch ?? "—", changes: st?.changes ?? 0, ahead: st?.ahead ?? 0, behind: st?.behind ?? 0 };
+    git = { name, path: fav, branch: st?.branch ?? "inconnue", changes: st?.changes ?? 0, ahead: st?.ahead ?? 0, behind: st?.behind ?? 0 };
   }
 
   // ─── Taille : la fenêtre épouse la barre ───
@@ -271,18 +271,18 @@
   const tips = $derived({
     cpu:
       `Processeur : ${sample ? pct(sample.cpu) : "…"}` +
-      (top?.cpu.length ? "\n\n" + top.cpu.slice(0, 3).map((g) => `${strip(g.name)} — ${pct(g.cpu)}`).join("\n") : "") +
+      (top?.cpu.length ? "\n\n" + top.cpu.slice(0, 3).map((g) => `${strip(g.name)}\t${pct(g.cpu)}`).join("\n") : "") +
       "\n\nClic : ouvrir le Moniteur",
     ram:
       `Mémoire : ${sample ? `${fmtBytes(sample.mem_used)} sur ${fmtBytes(sample.mem_total)} (${pct(memPct)})` : "…"}` +
-      (top?.mem.length ? "\n\n" + top.mem.slice(0, 3).map((g) => `${strip(g.name)} — ${fmtBytes(g.mem)}`).join("\n") : "") +
+      (top?.mem.length ? "\n\n" + top.mem.slice(0, 3).map((g) => `${strip(g.name)}\t${fmtBytes(g.mem)}`).join("\n") : "") +
       "\n\nClic : ouvrir le Moniteur",
-    net: sample ? `Réception : ${fmtBytes(sample.net_down)}/s\nEnvoi : ${fmtBytes(sample.net_up)}/s\n\nClic : ouvrir le Moniteur` : "Réseau",
+    net: sample ? `Réseau\n\nRéception\t${fmtBytes(sample.net_down)}/s\nEnvoi\t${fmtBytes(sample.net_up)}/s\n\nClic : ouvrir le Moniteur` : "Réseau",
     time: longDate,
     date: longDate,
-    battery: battery ? `Batterie : ${battery.percent} % — ${battery.charging ? "branchée sur secteur" : "sur batterie"}\n\nClic : options d'alimentation` : "",
+    battery: battery ? `Batterie : ${battery.percent} %\n${battery.charging ? "Branchée sur secteur" : "Sur batterie"}\n\nClic : options d'alimentation` : "",
     ports: devPorts.length
-      ? `Serveurs locaux :\n${devPorts.map((p) => `${p.port} — ${strip(p.process)}`).join("\n")}\n\nClic : ouvrir la page Ports`
+      ? `Serveurs locaux :\n${devPorts.map((p) => `${p.port}\t${strip(p.process)}`).join("\n")}\n\nClic : ouvrir la page Ports`
       : "Aucun serveur local en écoute\n\nClic : ouvrir la page Ports",
     docker: !docker
       ? "Docker"
@@ -292,13 +292,13 @@
           (docker.names.length ? "\n" + docker.names.slice(0, 8).join("\n") : "") +
           "\n\nClic : ouvrir la page Conteneurs",
     git: git
-      ? `${git.name} — ${git.branch}\n${git.changes ? `${git.changes} fichier(s) modifié(s)` : "Rien à commiter"}` +
-        (git.ahead ? `\n↑ ${git.ahead} commit(s) à pousser` : "") +
-        (git.behind ? `\n↓ ${git.behind} commit(s) à récupérer` : "") +
+      ? `${git.name}\n\nBranche\t${git.branch}\nModifications\t${git.changes || "aucune"}` +
+        (git.ahead ? `\nÀ pousser\t${git.ahead} commit(s)` : "") +
+        (git.behind ? `\nÀ récupérer\t${git.behind} commit(s)` : "") +
         "\n\nClic : ouvrir le projet"
       : "",
     media: media
-      ? `${media.title}${media.artist ? `\n${media.artist}` : ""}\n${media.app} — ${media.playing ? "en lecture" : "en pause"}\n\nClic sur le titre : ouvrir ${media.app}`
+      ? `${media.title}${media.artist ? `\n${media.artist}` : ""}\n\n${media.app}\t${media.playing ? "en lecture" : "en pause"}\n\nClic sur le titre : ouvrir ${media.app}`
       : "Aucune lecture en cours\n\nLance Spotify, YouTube, VLC…",
     volume: volume ? `Volume : ${volume.muted ? "coupé" : pct(volume.volume * 100)}\n\nMolette : régler · Clic : couper / rétablir` : "Volume",
   } as Record<string, string>);
