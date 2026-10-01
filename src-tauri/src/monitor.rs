@@ -182,7 +182,7 @@ pub fn fmt_bytes(b: u64) -> String {
 /// Texte de l'infobulle de l'icône (limitée à 127 caractères par Windows).
 pub fn tooltip(s: &Sample) -> String {
     format!(
-        "Toolbox\nCPU {:.0} % · RAM {} / {}\n↓ {}/s  ↑ {}/s",
+        "Kiosk\nCPU {:.0} % · RAM {} / {}\n↓ {}/s  ↑ {}/s",
         s.cpu,
         fmt_bytes(s.mem_used),
         fmt_bytes(s.mem_total),

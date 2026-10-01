@@ -198,14 +198,14 @@
 <div class="card row">
   <div class="grow">
     <div class="strong">Résumé dans l'infobulle de l'icône</div>
-    <div class="small muted">Survole l'icône Toolbox pour voir CPU, mémoire et débit sans ouvrir la fenêtre.</div>
+    <div class="small muted">Survole l'icône Kiosk pour voir CPU, mémoire et débit sans ouvrir la fenêtre.</div>
   </div>
   <Toggle checked={store.s?.monitor_tooltip ?? true} label="Résumé dans l'infobulle" onchange={setTooltip} />
 </div>
 <div class="card row">
   <div class="grow">
     <div class="strong">Jauge du processeur comme icône</div>
-    <div class="small muted">L'icône Toolbox devient une jauge qui se remplit selon l'utilisation du CPU (bleu, orange au-delà de 70 %, rouge au-delà de 90 %).</div>
+    <div class="small muted">L'icône Kiosk devient une jauge qui se remplit selon l'utilisation du CPU (bleu, orange au-delà de 70 %, rouge au-delà de 90 %).</div>
   </div>
   <Toggle checked={store.s?.monitor_tray_icon ?? true} label="Jauge du processeur comme icône" onchange={setTrayIcon} />
 </div>

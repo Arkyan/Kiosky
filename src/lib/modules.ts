@@ -1,4 +1,4 @@
-/** Modules de Toolbox : barre latérale et section « Modules » des réglages. */
+/** Modules de Kiosk : barre latérale et section « Modules » des réglages. */
 export type ModuleId =
   | "converter"
   | "expander"
@@ -38,7 +38,7 @@ export const PALETTE_SOURCES: { id: string; label: string; icon: string; descrip
   { id: "settings", label: "Paramètres Windows", icon: "settings", description: "Wi-Fi, Bluetooth, affichage, mises à jour…" },
   { id: "tools", label: "Outils système", icon: "terminal", description: "Gestionnaire des tâches, services, registre…" },
   { id: "system", label: "Actions système", icon: "power", description: "Verrouiller, veille, redémarrer, éteindre" },
-  { id: "toolbox", label: "Pages de Toolbox", icon: "calc", description: "Ouvrir une page, prendre une couleur" },
+  { id: "toolbox", label: "Pages de Kiosk", icon: "calc", description: "Ouvrir une page, prendre une couleur" },
   { id: "calc", label: "Calculs et conversions", icon: "calc", description: "2+2, 10 km en miles, 50 eur usd, heures…" },
   { id: "web", label: "Recherche web", icon: "globe", description: "g, yt, gh, mdn… et « Rechercher sur Google »" },
   { id: "shell", label: "Commandes", icon: "terminal", description: ">ipconfig : exécuter une commande PowerShell" },

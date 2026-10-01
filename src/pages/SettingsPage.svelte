@@ -130,7 +130,7 @@
     <div class="ico"><Icon name="power" size={18} /></div>
     <div class="grow">
       <div class="strong">Lancer au démarrage de Windows</div>
-      <div class="small muted">Toolbox démarre discrètement dans la zone de notification.</div>
+      <div class="small muted">Kiosk démarre discrètement dans la zone de notification.</div>
     </div>
     <Toggle checked={autostart} label="Lancer au démarrage" onchange={setAutostart} />
   </div>
@@ -273,7 +273,7 @@
   <div class="row">
     <div class="ico logo"></div>
     <div class="grow">
-      <div class="strong">Toolbox 0.1.0</div>
+      <div class="strong">Kiosk 0.1.0</div>
       <div class="small muted">Rust + Tauri 2 + Svelte 5 · Réglages dans <span class="mono">%APPDATA%\com.bebou.toolbox</span></div>
     </div>
   </div>

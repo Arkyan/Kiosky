@@ -341,7 +341,7 @@ async fn get_volume() -> Result<VolumeState, String> {
 /// Menu de l'icône : la pipette n'y figure que si son module est actif.
 fn tray_menu(app: &AppHandle, s: &Settings) -> tauri::Result<Menu<tauri::Wry>> {
     let menu = Menu::new(app)?;
-    menu.append(&MenuItem::with_id(app, "open", "Ouvrir Toolbox", true, None::<&str>)?)?;
+    menu.append(&MenuItem::with_id(app, "open", "Ouvrir Kiosk", true, None::<&str>)?)?;
     menu.append(&MenuItem::with_id(app, "palette", "Palette de recherche", true, None::<&str>)?)?;
     if s.module_on("color") {
         menu.append(&MenuItem::with_id(app, "picker", "Pipette de couleur", true, None::<&str>)?)?;
@@ -358,7 +358,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let menu = tray_menu(app, &settings)?;
 
     let mut tray = TrayIconBuilder::with_id("toolbox")
-        .tooltip("Toolbox")
+        .tooltip("Kiosk")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -420,7 +420,7 @@ fn save_settings(app: AppHandle, state: State<'_, AppState>, mut settings: Setti
     settings.shell_history = old.shell_history.clone();
     if let Some(tray) = app.tray_by_id("toolbox") {
         if old.tooltip_active() && !settings.tooltip_active() {
-            let _ = tray.set_tooltip(Some("Toolbox"));
+            let _ = tray.set_tooltip(Some("Kiosk"));
         }
         if old.gauge_active() && !settings.gauge_active() {
             let _ = tray.set_icon(app.default_window_icon().cloned());
@@ -905,6 +905,24 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
     result.map_err(|e| e.to_string())
 }
 
+/// L'application s'appelait « Toolbox » : son ancienne entrée de démarrage automatique pointerait
+/// vers un exe disparu. On ne retire que la nôtre (lancée avec --minimized), jamais celle d'un autre
+/// logiciel du même nom (JetBrains Toolbox…).
+fn remove_old_autostart() {
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_WRITE};
+    let Ok(run) = winreg::RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey_with_flags(r"Software\Microsoft\Windows\CurrentVersion\Run", KEY_READ | KEY_WRITE)
+    else {
+        return;
+    };
+    if let Ok(cmd) = run.get_value::<String, _>("Toolbox") {
+        let lower = cmd.to_lowercase();
+        if lower.contains("toolbox.exe") && lower.contains("--minimized") {
+            let _ = run.delete_value("Toolbox");
+        }
+    }
+}
+
 // ───────────────────────────── Point d'entrée ─────────────────────────────
 
 fn main() {
@@ -928,6 +946,7 @@ fn main() {
             let path = app.path().app_config_dir()?.join("settings.json");
             let settings = settings::load(&path);
 
+            remove_old_autostart();
             expander::start();
             expander::configure(settings.expander_active(), &settings.snippets);
             let initial = settings.clone();
@@ -1076,5 +1095,5 @@ fn main() {
             set_autostart,
         ])
         .run(tauri::generate_context!())
-        .expect("erreur au lancement de Toolbox");
+        .expect("erreur au lancement de Kiosk");
 }
