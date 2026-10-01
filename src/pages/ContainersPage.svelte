@@ -73,15 +73,38 @@
     }
   }
 
-  /** Conteneurs regroupés par projet docker compose */
+  let query = $state("");
+  /** Groupes dépliés à la main (tout est replié par défaut) */
+  let opened = $state<Record<string, boolean>>({});
+
+  const q = $derived(query.trim().toLowerCase());
+
+  /** Recherche : nom, image, projet, statut ou port (« 5432 ») */
+  const matches = (c: Container) =>
+    !q ||
+    c.name.toLowerCase().includes(q) ||
+    c.image.toLowerCase().includes(q) ||
+    (c.project ?? "").toLowerCase().includes(q) ||
+    c.status.toLowerCase().includes(q) ||
+    c.ports.some((p) => String(p).startsWith(q));
+
+  /** Conteneurs regroupés par projet docker compose (« » = sans projet) */
   const groups = $derived.by(() => {
     const m = new Map<string, Container[]>();
     for (const c of docker?.containers ?? []) {
+      if (!matches(c)) continue;
       const k = c.project ?? "";
       m.set(k, [...(m.get(k) ?? []), c]);
     }
     return [...m.entries()].sort((a, b) => (a[0] === "" ? 1 : b[0] === "" ? -1 : a[0].localeCompare(b[0])));
   });
+
+  const filteredDistros = $derived((wsl?.distros ?? []).filter((d) => !q || d.name.toLowerCase().includes(q)));
+
+  // Pendant une recherche, les groupes qui ont des résultats sont dépliés.
+  const isOpen = (project: string) => !!q || !!opened[project];
+  const toggle = (project: string) => (opened = { ...opened, [project]: !opened[project] });
+  const allOpen = $derived(groups.length > 0 && groups.every(([p]) => opened[p]));
 
   const isBusy = (prefix: string) => busy?.startsWith(prefix) ?? false;
   const internal = (name: string) => name.startsWith("docker-desktop");
@@ -97,6 +120,15 @@
   <div class="banner error">{error}</div>
 {/if}
 
+<div class="searchbox">
+  <Icon name="search" size={15} />
+  <!-- svelte-ignore a11y_autofocus -->
+  <input bind:value={query} placeholder="Conteneur, image, projet, port ou distribution…" spellcheck="false" autofocus />
+  {#if query}
+    <button class="clear" title="Effacer" onclick={() => (query = "")}><Icon name="x" size={12} /></button>
+  {/if}
+</div>
+
 <!-- WSL -->
 <div class="section-head">
   <h2>WSL</h2>
@@ -110,7 +142,7 @@
   <div class="card empty muted">WSL n'est pas installé (<span class="mono">wsl --install</span> dans un terminal admin).</div>
 {:else if wsl}
   <div class="distros">
-    {#each wsl.distros as d (d.name)}
+    {#each filteredDistros as d (d.name)}
       <div class="card distro" class:on={d.running}>
         <div class="dhead">
           <span class="dot"></span>
@@ -135,6 +167,8 @@
           </div>
         {/if}
       </div>
+    {:else}
+      <div class="card empty muted small">Aucune distribution ne correspond.</div>
     {/each}
   </div>
 {:else}
@@ -145,6 +179,15 @@
 <div class="section-head">
   <h2>Docker</h2>
   {#if docker?.running}<span class="small muted">{docker.containers.filter((c) => c.running).length} en cours sur {docker.containers.length}</span>{/if}
+  <span class="grow"></span>
+  {#if docker?.running && groups.length > 1 && !q}
+    <button
+      class="btn ghost small-btn"
+      onclick={() => (opened = allOpen ? {} : Object.fromEntries(groups.map(([p]) => [p, true])))}
+    >
+      {allOpen ? "Tout replier" : "Tout déplier"}
+    </button>
+  {/if}
 </div>
 {#if docker && !docker.installed}
   <div class="card empty muted">Docker n'est pas installé.</div>
@@ -166,23 +209,34 @@
   </div>
 {:else if docker}
   {#each groups as [project, list] (project)}
+    {@const ids = list.map((c) => c.id)}
+    {@const running = list.filter((c) => c.running).length}
+    {@const open = isOpen(project)}
     <div class="card group">
-      {#if project}
-        {@const ids = list.map((c) => c.id)}
-        <div class="ghead">
+      <div class="ghead">
+        <button class="gtoggle" onclick={() => toggle(project)} aria-expanded={open}>
+          <span class="chev" class:open><Icon name="down_small" size={15} /></span>
           <Icon name="box" size={15} />
-          <span class="strong">{project}</span>
-          <span class="small muted">compose · {list.filter((c) => c.running).length}/{list.length}</span>
-          <span class="grow"></span>
+          <span class="strong">{project || "Autres conteneurs"}</span>
+          <span class="gstate" class:live={running > 0}>
+            <span class="dot" class:live={running > 0}></span>
+            {running}/{list.length} en cours
+          </span>
+          {#if !open}
+            {@const ports = [...new Set(list.flatMap((c) => c.ports))]}
+            {#if ports.length}<span class="small muted gports">{ports.slice(0, 4).join(" · ")}{ports.length > 4 ? "…" : ""}</span>{/if}
+          {/if}
+        </button>
+        {#if list.length > 1 || project}
           {#if list.some((c) => !c.running)}
             <button class="btn ghost small-btn" disabled={isBusy(`docker|${ids.join(",")}`)} onclick={() => dockerDo(ids, "start")}><Icon name="play" size={13} /> Tout démarrer</button>
           {/if}
           {#if list.some((c) => c.running)}
             <button class="btn ghost small-btn" disabled={isBusy(`docker|${ids.join(",")}`)} onclick={() => dockerDo(ids, "stop")}><Icon name="stop" size={12} /> Tout arrêter</button>
           {/if}
-        </div>
-      {/if}
-      {#each list as c (c.id)}
+        {/if}
+      </div>
+      {#each open ? list : [] as c (c.id)}
         <div class="ctr" class:off={!c.running}>
           <span class="dot" class:live={c.running}></span>
           <div class="cinfo">
@@ -215,7 +269,7 @@
       {/each}
     </div>
   {:else}
-    <div class="card empty muted">Aucun conteneur.</div>
+    <div class="card empty muted">{q ? "Aucun conteneur ne correspond." : "Aucun conteneur."}</div>
   {/each}
 {:else}
   <div class="card skeleton"></div>
@@ -343,13 +397,92 @@
     margin-bottom: 8px;
     overflow: hidden;
   }
-  .ghead {
+  .searchbox {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 10px 8px 16px;
-    border-bottom: 1px solid var(--stroke);
-    background: var(--card-2);
+    height: 36px;
+    margin-bottom: 4px;
+    padding: 0 8px 0 12px;
+    border-radius: 8px;
+    border: 1px solid var(--stroke);
+    background: var(--input);
+    color: var(--text-2);
+  }
+  .searchbox:focus-within {
+    border-bottom: 2px solid var(--accent);
+  }
+  .searchbox input {
+    flex: 1;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--text);
+  }
+  .clear {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-3);
+    cursor: pointer;
+  }
+  .clear:hover {
+    background: var(--fill-hover);
+  }
+  .ghead {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px 4px 6px;
+  }
+  .gtoggle {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 36px;
+    padding: 0 8px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+  }
+  .gtoggle:hover {
+    background: var(--fill-hover);
+  }
+  .chev {
+    display: flex;
+    color: var(--text-3);
+    transform: rotate(-90deg);
+    transition: transform 0.15s;
+  }
+  .chev.open {
+    transform: none;
+  }
+  .gstate {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 4px;
+    font-size: 12px;
+    color: var(--text-3);
+  }
+  .gstate.live {
+    color: var(--text-2);
+  }
+  .gports {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .ghead + .ctr {
+    border-top: 1px solid var(--stroke);
   }
   .ctr {
     display: flex;
