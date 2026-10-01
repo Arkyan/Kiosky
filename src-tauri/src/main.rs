@@ -24,7 +24,7 @@ mod widget;
 
 use settings::{AppState, Settings};
 use std::cell::Cell;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -162,8 +162,6 @@ fn start_color_pick(app: &AppHandle, from_main: bool) {
 
 // ───────────────────────────── Barre flottante ─────────────────────────────
 
-/// Masquée parce qu'une application est en plein écran (réaffichée ensuite).
-static WIDGET_HIDDEN_FULLSCREEN: AtomicBool = AtomicBool::new(false);
 /// Compteur de déplacements : on n'enregistre la position qu'une fois la souris arrêtée.
 static WIDGET_MOVES: AtomicU64 = AtomicU64::new(0);
 
@@ -191,6 +189,7 @@ fn apply_widget(app: &AppHandle, s: &Settings) {
             // L'interface se redimensionne puis appelle fit_widget, qui l'affiche à la bonne place.
             let _ = app.emit_to("widget", "widget-config", ());
         } else {
+            widget::guard(None);
             let _ = w.hide();
         }
     }
@@ -199,23 +198,12 @@ fn apply_widget(app: &AppHandle, s: &Settings) {
     }
 }
 
-/// Appelé chaque seconde : premier plan au-dessus de la barre des tâches, masquage en plein écran.
+/// Appelé chaque seconde : tient le gardien à jour (premier plan et plein écran sont gérés
+/// toutes les 40 ms par widget::start_guard).
 fn widget_tick(app: &AppHandle) {
     let enabled = app.state::<AppState>().settings.lock().unwrap().widget_enabled;
-    let (Some(w), Some(raw)) = (app.get_webview_window("widget"), widget_raw(app)) else { return };
-    widget::guard(enabled.then_some(raw));
-    if !enabled {
-        return;
-    }
-    if widget::fullscreen_app(raw) {
-        if w.is_visible().unwrap_or(false) {
-            let _ = w.hide();
-            WIDGET_HIDDEN_FULLSCREEN.store(true, Ordering::Relaxed);
-        }
-        return;
-    }
-    if WIDGET_HIDDEN_FULLSCREEN.swap(false, Ordering::Relaxed) {
-        let _ = w.show();
+    if let Some(raw) = widget_raw(app) {
+        widget::guard(enabled.then_some(raw));
     }
 }
 
@@ -240,7 +228,7 @@ fn fit_widget(app: AppHandle, state: State<'_, AppState>, width: f64, height: f6
     if let Some((x, y)) = pos {
         let _ = w.set_position(PhysicalPosition::new(x, y));
     }
-    if !WIDGET_HIDDEN_FULLSCREEN.load(Ordering::Relaxed) && !w.is_visible().unwrap_or(false) {
+    if !widget::hidden_fullscreen() && !w.is_visible().unwrap_or(false) {
         let _ = w.show();
     }
     if let Some(raw) = widget_raw(&app) {

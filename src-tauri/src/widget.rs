@@ -10,8 +10,8 @@ use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORI
 use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
 use windows::Win32::UI::WindowsAndMessaging::{
     FindWindowExW, FindWindowW, GetClassNameW, GetForegroundWindow, GetWindow, GetWindowLongPtrW, GetWindowRect,
-    IsWindowVisible, SetWindowLongPtrW, SetWindowPos, GWLP_HWNDPARENT, GWL_EXSTYLE, GW_HWNDPREV, GW_OWNER,
-    HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WS_EX_TOPMOST,
+    IsWindowVisible, SetWindowLongPtrW, SetWindowPos, ShowWindowAsync, GWLP_HWNDPARENT, GWL_EXSTYLE, GW_HWNDPREV,
+    GW_OWNER, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_HIDE, SW_SHOWNOACTIVATE, WS_EX_TOPMOST,
 };
 
 /// Écart avec les bords de la barre des tâches, en pixels physiques
@@ -70,8 +70,18 @@ static GUARDED: AtomicIsize = AtomicIsize::new(0);
 /// La barre flottante doit-elle être rattachée à la barre des tâches (modes « taskbar-* ») ?
 static ATTACHED: AtomicBool = AtomicBool::new(false);
 
+/// Cachée parce qu'une application est en plein écran sur le même écran (réaffichée ensuite).
+static HIDDEN_FULLSCREEN: AtomicBool = AtomicBool::new(false);
+
 pub fn guard(raw: Option<isize>) {
     GUARDED.store(raw.unwrap_or(0), Ordering::Relaxed);
+    if raw.is_none() {
+        HIDDEN_FULLSCREEN.store(false, Ordering::Relaxed);
+    }
+}
+
+pub fn hidden_fullscreen() -> bool {
+    HIDDEN_FULLSCREEN.load(Ordering::Relaxed)
 }
 
 /// Rattache la fenêtre à la barre des tâches, ou l'en détache.
@@ -126,6 +136,21 @@ pub fn start_guard() {
         }
         let own = HWND(raw as _);
         unsafe {
+            // Plein écran (jeu, vidéo) sur le même écran : on s'efface aussitôt, et on revient
+            // dès qu'il se termine. ShowWindowAsync : jamais bloquant pour ce thread.
+            let fullscreen = fullscreen_app(raw);
+            if fullscreen {
+                if IsWindowVisible(own).as_bool() {
+                    let _ = ShowWindowAsync(own, SW_HIDE);
+                    HIDDEN_FULLSCREEN.store(true, Ordering::Relaxed);
+                }
+                continue;
+            }
+            if HIDDEN_FULLSCREEN.swap(false, Ordering::Relaxed) {
+                let _ = ShowWindowAsync(own, SW_SHOWNOACTIVATE);
+                keep_on_top(raw);
+                continue;
+            }
             if !IsWindowVisible(own).as_bool() {
                 continue;
             }
@@ -159,8 +184,13 @@ pub fn fullscreen_app(own: isize) -> bool {
             return false;
         }
         let Some(r) = rect(fg) else { return false };
+        let monitor = MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST);
+        // Plein écran sur un autre écran que celui de la barre : rien à cacher.
+        if monitor != MonitorFromWindow(HWND(own as _), MONITOR_DEFAULTTONEAREST) {
+            return false;
+        }
         let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
-        if !GetMonitorInfoW(MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST), &mut info).as_bool() {
+        if !GetMonitorInfoW(monitor, &mut info).as_bool() {
             return false;
         }
         let m = info.rcMonitor;
