@@ -1,0 +1,84 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Toolbox",
+  "version": "0.1.0",
+  "identifier": "com.bebou.toolbox",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Toolbox",
+        "width": 1000,
+        "height": 690,
+        "minWidth": 780,
+        "minHeight": 520,
+        "center": true,
+        "visible": false,
+        "transparent": true,
+        "windowEffects": {
+          "effects": [
+            "mica"
+          ]
+        }
+      },
+      {
+        "label": "palette",
+        "title": "Convertisseur rapide",
+        "url": "index.html#palette",
+        "width": 660,
+        "height": 430,
+        "center": true,
+        "visible": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": true,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "windowEffects": {
+          "effects": [
+            "acrylic"
+          ]
+        }
+      },
+      {
+        "label": "picker",
+        "title": "Pipette",
+        "url": "index.html#picker",
+        "width": 180,
+        "height": 232,
+        "visible": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "focus": false,
+        "focusable": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis",
+      "msi"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ]
+  }
+}

@@ -1,0 +1,503 @@
+// En release, pas de console noire derrière l'application.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+mod audio;
+mod calc;
+mod cleaner;
+mod colorpicker;
+mod converter;
+mod expander;
+mod monitor;
+mod ports;
+mod settings;
+mod startup;
+mod units;
+mod util;
+
+use settings::{AppState, Settings};
+use std::cell::Cell;
+use std::sync::Mutex;
+use std::time::Duration;
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::image::Image;
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, State, WindowEvent};
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+
+// ───────────────────────────── Fenêtres ─────────────────────────────
+
+fn show_main(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
+fn toggle_palette(app: &AppHandle) {
+    let Some(w) = app.get_webview_window("palette") else { return };
+    if w.is_visible().unwrap_or(false) {
+        let _ = w.hide();
+    } else {
+        let _ = w.center();
+        let _ = w.show();
+        let _ = w.set_focus();
+        let _ = app.emit_to("palette", "palette-open", ());
+    }
+}
+
+/// Enregistre les raccourcis globaux du convertisseur et de la pipette.
+fn register_shortcuts(app: &AppHandle, palette: &str, picker: &str) -> Result<(), String> {
+    if palette.eq_ignore_ascii_case(picker) {
+        return Err("Le convertisseur et la pipette ne peuvent pas avoir le même raccourci".into());
+    }
+    let gs = app.global_shortcut();
+    let _ = gs.unregister_all();
+    for shortcut in [palette, picker] {
+        gs.register(shortcut).map_err(|e| {
+            format!("Raccourci « {shortcut} » invalide ou déjà pris par une autre application ({e})")
+        })?;
+    }
+    Ok(())
+}
+
+fn on_shortcut(app: &AppHandle, shortcut: &Shortcut) {
+    let picker = app.state::<AppState>().settings.lock().unwrap().picker_shortcut.clone();
+    if picker.parse::<Shortcut>().is_ok_and(|p| &p == shortcut) {
+        start_color_pick(app, false);
+    } else {
+        toggle_palette(app);
+    }
+}
+
+/// Lance la pipette. Si `from_main`, la fenêtre principale est cachée pendant la sélection
+/// pour laisser voir ce qu'il y a derrière, puis réaffichée.
+fn start_color_pick(app: &AppHandle, from_main: bool) {
+    if colorpicker::is_picking() {
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let Some(loupe) = app.get_webview_window("picker") else { return };
+        let main = app.get_webview_window("main");
+        if from_main {
+            if let Some(m) = &main {
+                let _ = m.hide();
+            }
+            std::thread::sleep(Duration::from_millis(180)); // fin de l'animation de fermeture
+        }
+        let size = loupe.outer_size().map(|s| (s.width as i32, s.height as i32)).unwrap_or((180, 230));
+        let shown = Cell::new(false);
+        let result = colorpicker::pick(size, |frame, (x, y)| {
+            let _ = loupe.set_position(PhysicalPosition::new(x, y));
+            let _ = app.emit_to("picker", "picker-frame", frame);
+            if !shown.get() {
+                let _ = loupe.show();
+                shown.set(true);
+            }
+        });
+
+        match result {
+            Ok(Some(rgb)) => {
+                let hex = colorpicker::hex(rgb);
+                let state = app.state::<AppState>();
+                let text = {
+                    let mut s = state.settings.lock().unwrap();
+                    s.colors.retain(|c| !c.eq_ignore_ascii_case(&hex));
+                    s.colors.insert(0, hex.clone());
+                    s.colors.truncate(30);
+                    let _ = settings::save(&state.path, &s);
+                    colorpicker::format_color(rgb, &s.color_format)
+                };
+                if let Err(e) = util::set_clipboard(&text) {
+                    eprintln!("Pipette : {e}");
+                }
+                let _ = app.emit("color-picked", serde_json::json!({ "hex": hex, "text": text }));
+                std::thread::sleep(Duration::from_millis(700)); // laisse voir « Copié »
+            }
+            Ok(None) => {}
+            Err(e) => eprintln!("Pipette : {e}"),
+        }
+        let _ = loupe.hide();
+        let _ = app.emit_to("picker", "picker-hidden", ());
+        if from_main {
+            show_main(&app);
+        }
+    });
+}
+
+fn build_tray(app: &AppHandle) -> tauri::Result<()> {
+    let open = MenuItem::with_id(app, "open", "Ouvrir Toolbox", true, None::<&str>)?;
+    let palette = MenuItem::with_id(app, "palette", "Convertisseur rapide", true, None::<&str>)?;
+    let picker = MenuItem::with_id(app, "picker", "Pipette de couleur", true, None::<&str>)?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let quit = MenuItem::with_id(app, "quit", "Quitter", true, None::<&str>)?;
+    let menu = Menu::new(app)?;
+    menu.append(&open)?;
+    menu.append(&palette)?;
+    menu.append(&picker)?;
+    menu.append(&separator)?;
+    menu.append(&quit)?;
+
+    let mut tray = TrayIconBuilder::with_id("toolbox")
+        .tooltip("Toolbox")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "open" => show_main(app),
+            "palette" => toggle_palette(app),
+            "picker" => start_color_pick(app, false),
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main(tray.app_handle());
+            }
+        });
+    if let Some(icon) = app.default_window_icon().cloned() {
+        tray = tray.icon(icon);
+    }
+    tray.build(app)?;
+    Ok(())
+}
+
+/// Exécute une fonction bloquante (COM, registre, processus) hors du thread principal.
+async fn blocking<T, F>(f: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+// ───────────────────────────── Commandes ─────────────────────────────
+
+#[tauri::command]
+fn get_settings(state: State<'_, AppState>) -> Settings {
+    state.settings.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn save_settings(app: AppHandle, state: State<'_, AppState>, mut settings: Settings) -> Result<(), String> {
+    let old = state.settings.lock().unwrap().clone();
+    if old.palette_shortcut != settings.palette_shortcut || old.picker_shortcut != settings.picker_shortcut {
+        if let Err(e) = register_shortcuts(&app, &settings.palette_shortcut, &settings.picker_shortcut) {
+            let _ = register_shortcuts(&app, &old.palette_shortcut, &old.picker_shortcut);
+            return Err(e);
+        }
+    }
+    // Compteur tenu par Rust : l'interface peut en avoir une copie périmée.
+    settings.cleaned_total = old.cleaned_total;
+    if let Some(tray) = app.tray_by_id("toolbox") {
+        if old.monitor_tooltip && !settings.monitor_tooltip {
+            let _ = tray.set_tooltip(Some("Toolbox"));
+        }
+        if old.monitor_tray_icon && !settings.monitor_tray_icon {
+            let _ = tray.set_icon(app.default_window_icon().cloned());
+        }
+    }
+    expander::configure(settings.expander_enabled, &settings.snippets);
+    settings::save(&state.path, &settings)?;
+    *state.settings.lock().unwrap() = settings;
+    Ok(())
+}
+
+#[tauri::command]
+async fn convert(input: String) -> Vec<converter::ConvResult> {
+    converter::convert(&input).await
+}
+
+#[tauri::command]
+fn hide_palette(app: AppHandle) {
+    if let Some(w) = app.get_webview_window("palette") {
+        let _ = w.hide();
+    }
+}
+
+#[tauri::command]
+async fn get_mixer() -> Result<audio::MixerState, String> {
+    blocking(audio::state).await
+}
+
+#[tauri::command]
+async fn set_master_volume(volume: f32) -> Result<(), String> {
+    blocking(move || audio::set_master_volume(volume)).await
+}
+
+#[tauri::command]
+async fn set_master_mute(muted: bool) -> Result<(), String> {
+    blocking(move || audio::set_master_mute(muted)).await
+}
+
+#[tauri::command]
+async fn set_app_volume(key: String, volume: f32) -> Result<(), String> {
+    blocking(move || audio::set_app_volume(&key, volume)).await
+}
+
+#[tauri::command]
+async fn set_app_mute(key: String, muted: bool) -> Result<(), String> {
+    blocking(move || audio::set_app_mute(&key, muted)).await
+}
+
+#[tauri::command]
+async fn apply_preset(state: State<'_, AppState>, name: String) -> Result<(), String> {
+    let preset = state
+        .settings
+        .lock()
+        .unwrap()
+        .presets
+        .iter()
+        .find(|p| p.name == name)
+        .cloned()
+        .ok_or_else(|| format!("Préréglage « {name} » introuvable"))?;
+    blocking(move || audio::apply_rules(&preset.rules)).await
+}
+
+#[tauri::command]
+async fn get_startup() -> Result<startup::StartupReport, String> {
+    blocking(startup::report).await
+}
+
+#[tauri::command]
+async fn set_startup_enabled(id: String, enabled: bool) -> Result<(), String> {
+    blocking(move || startup::set_enabled(&id, enabled)).await
+}
+
+#[tauri::command]
+fn restart_as_admin(app: AppHandle) -> Result<(), String> {
+    startup::relaunch_elevated()?;
+    app.exit(0);
+    Ok(())
+}
+
+#[tauri::command]
+fn pick_color(app: AppHandle) {
+    start_color_pick(&app, true);
+}
+
+#[tauri::command]
+async fn scan_cleanup() -> Result<cleaner::ScanReport, String> {
+    blocking(|| Ok(cleaner::scan())).await
+}
+
+#[tauri::command]
+async fn run_cleanup(state: State<'_, AppState>, ids: Vec<String>) -> Result<cleaner::CleanReport, String> {
+    let report = blocking(move || Ok(cleaner::clean(&ids))).await?;
+    let mut s = state.settings.lock().unwrap();
+    s.cleaned_total += report.freed;
+    settings::save(&state.path, &s)?;
+    Ok(report)
+}
+
+#[tauri::command]
+async fn find_folders(app: AppHandle, state: State<'_, AppState>) -> Result<Vec<cleaner::FoundFolder>, String> {
+    let (roots, names) = {
+        let s = state.settings.lock().unwrap();
+        (s.clean_roots.clone(), s.clean_folder_names.clone())
+    };
+    blocking(move || {
+        Ok(cleaner::find_folders(&roots, &names, |p| {
+            let _ = app.emit_to("main", "folders-progress", p);
+        }))
+    })
+    .await
+}
+
+#[tauri::command]
+async fn delete_folders(state: State<'_, AppState>, paths: Vec<String>) -> Result<cleaner::CleanReport, String> {
+    let (roots, names) = {
+        let s = state.settings.lock().unwrap();
+        (s.clean_roots.clone(), s.clean_folder_names.clone())
+    };
+    let report = blocking(move || Ok(cleaner::delete_folders(&paths, &roots, &names))).await?;
+    let mut s = state.settings.lock().unwrap();
+    s.cleaned_total += report.freed;
+    settings::save(&state.path, &s)?;
+    Ok(report)
+}
+
+#[tauri::command]
+async fn pick_folder(app: AppHandle) -> Result<Option<String>, String> {
+    let owner = app
+        .get_webview_window("main")
+        .and_then(|w| w.hwnd().ok())
+        .map(|h| h.0 as isize)
+        .unwrap_or(0);
+    blocking(move || util::pick_folder(owner, "Dossier où chercher")).await
+}
+
+#[tauri::command]
+async fn get_ports() -> Result<Vec<ports::PortEntry>, String> {
+    blocking(ports::list).await
+}
+
+#[tauri::command]
+async fn kill_process(pid: u32) -> Result<(), String> {
+    blocking(move || ports::kill(pid)).await
+}
+
+#[tauri::command]
+async fn kill_processes(pids: Vec<u32>) -> Result<(), String> {
+    blocking(move || {
+        // On arrête tout ce qui peut l'être, et on signale la première erreur.
+        let errors: Vec<String> = pids.iter().filter_map(|&pid| ports::kill(pid).err()).collect();
+        match errors.first() {
+            Some(e) if errors.len() == pids.len() => Err(e.clone()),
+            Some(_) => Err(format!("{} processus sur {} n'ont pas pu être arrêtés", errors.len(), pids.len())),
+            None => Ok(()),
+        }
+    })
+    .await
+}
+
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    util::open_local_url(&url)
+}
+
+/// Action d'un résultat de la palette (voir `ConvResult::action`).
+#[tauri::command]
+async fn run_action(action: String) -> Result<(), String> {
+    match action.split_once(':') {
+        Some(("kill", pid)) => {
+            let pid: u32 = pid.parse().map_err(|_| "PID invalide".to_string())?;
+            blocking(move || ports::kill(pid)).await
+        }
+        Some(("open", url)) => util::open_local_url(url),
+        _ => Err(format!("Action inconnue : {action}")),
+    }
+}
+
+#[tauri::command]
+async fn get_monitor() -> Result<monitor::MonitorState, String> {
+    blocking(|| Ok(monitor::state())).await
+}
+
+#[tauri::command]
+fn get_autostart(app: AppHandle) -> bool {
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+#[tauri::command]
+fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let launcher = app.autolaunch();
+    let result = if enabled { launcher.enable() } else { launcher.disable() };
+    result.map_err(|e| e.to_string())
+}
+
+// ───────────────────────────── Point d'entrée ─────────────────────────────
+
+fn main() {
+    tauri::Builder::default()
+        // Doit être le premier plugin : une seule instance de l'app à la fois.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec!["--minimized"]),
+        ))
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    if event.state() == ShortcutState::Pressed {
+                        on_shortcut(app, shortcut);
+                    }
+                })
+                .build(),
+        )
+        .setup(|app| {
+            let path = app.path().app_config_dir()?.join("settings.json");
+            let settings = settings::load(&path);
+
+            expander::start();
+            expander::configure(settings.expander_enabled, &settings.snippets);
+            let (palette_key, picker_key) = (settings.palette_shortcut.clone(), settings.picker_shortcut.clone());
+
+            app.manage(AppState { settings: Mutex::new(settings), path });
+            // Après manage() : le gestionnaire de raccourcis lit les réglages.
+            if let Err(e) = register_shortcuts(app.handle(), &palette_key, &picker_key) {
+                eprintln!("{e}");
+            }
+            build_tray(app.handle())?;
+
+            // La loupe de la pipette laisse passer la souris.
+            if let Some(loupe) = app.get_webview_window("picker") {
+                let _ = loupe.set_ignore_cursor_events(true);
+            }
+
+            let handle = app.handle().clone();
+            monitor::start(move |sample, top| {
+                let (tooltip, gauge) = {
+                    let s = handle.state::<AppState>();
+                    let s = s.settings.lock().unwrap();
+                    (s.monitor_tooltip, s.monitor_tray_icon)
+                };
+                if let Some(tray) = handle.tray_by_id("toolbox") {
+                    if tooltip {
+                        let _ = tray.set_tooltip(Some(monitor::tooltip(sample)));
+                    }
+                    if gauge {
+                        let _ = tray.set_icon(Some(Image::new_owned(monitor::gauge_icon(sample.cpu), 32, 32)));
+                    }
+                }
+                let _ = handle.emit_to("main", "monitor-sample", sample);
+                let _ = handle.emit_to("main", "monitor-top", top);
+            });
+
+            // Lancé au démarrage de Windows → reste discret dans la zone de notification.
+            if !std::env::args().any(|a| a == "--minimized") {
+                show_main(app.handle());
+            }
+            Ok(())
+        })
+        .on_window_event(|window, event| match event {
+            // Fermer une fenêtre la cache seulement : l'app continue dans la zone de notification.
+            WindowEvent::CloseRequested { api, .. } => {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+            WindowEvent::Focused(false) if window.label() == "palette" => {
+                let _ = window.hide();
+            }
+            _ => {}
+        })
+        .invoke_handler(tauri::generate_handler![
+            get_settings,
+            save_settings,
+            convert,
+            hide_palette,
+            get_mixer,
+            set_master_volume,
+            set_master_mute,
+            set_app_volume,
+            set_app_mute,
+            apply_preset,
+            get_startup,
+            set_startup_enabled,
+            restart_as_admin,
+            pick_color,
+            scan_cleanup,
+            run_cleanup,
+            find_folders,
+            delete_folders,
+            pick_folder,
+            get_ports,
+            kill_process,
+            get_monitor,
+            kill_processes,
+            open_url,
+            run_action,
+            get_autostart,
+            set_autostart,
+        ])
+        .run(tauri::generate_context!())
+        .expect("erreur au lancement de Toolbox");
+}
