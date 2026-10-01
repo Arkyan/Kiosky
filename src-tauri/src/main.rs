@@ -855,6 +855,11 @@ fn main() {
             search::refresh_apps(); // liste des applis prête avant la première recherche
             widget::start_guard();
 
+            // Barre flottante : apparition et disparition sans animation.
+            if let Some(raw) = widget_raw(app.handle()) {
+                widget::disable_animations(raw);
+            }
+
             // La loupe de la pipette laisse passer la souris.
             if let Some(loupe) = app.get_webview_window("picker") {
                 let _ = loupe.set_ignore_cursor_events(true);

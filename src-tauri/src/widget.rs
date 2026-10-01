@@ -58,6 +58,21 @@ pub fn taskbar_height() -> Option<i32> {
     taskbar().map(|(r, _)| r.bottom - r.top)
 }
 
+/// Apparition et disparition instantanées : sans le fondu que Windows applique aux fenêtres.
+pub fn disable_animations(raw: isize) {
+    use windows::Win32::Foundation::BOOL;
+    use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED};
+    let off = BOOL::from(true);
+    unsafe {
+        let _ = DwmSetWindowAttribute(
+            HWND(raw as _),
+            DWMWA_TRANSITIONS_FORCEDISABLED,
+            &off as *const BOOL as *const _,
+            std::mem::size_of::<BOOL>() as u32,
+        );
+    }
+}
+
 /// Remet la fenêtre au-dessus de tout : un clic sur la barre des tâches la ferait passer dessous.
 pub fn keep_on_top(raw: isize) {
     unsafe {
