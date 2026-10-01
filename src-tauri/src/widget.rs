@@ -2,7 +2,7 @@
 //! masquage automatique quand une application passe en plein écran.
 
 use serde::Serialize;
-use std::sync::atomic::{AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::time::Duration;
 use windows::core::w;
 use windows::Win32::Foundation::{HWND, RECT};
@@ -10,8 +10,8 @@ use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORI
 use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
 use windows::Win32::UI::WindowsAndMessaging::{
     FindWindowExW, FindWindowW, GetClassNameW, GetForegroundWindow, GetWindow, GetWindowLongPtrW, GetWindowRect,
-    IsWindowVisible, SetWindowPos, GWL_EXSTYLE, GW_HWNDPREV, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    WS_EX_TOPMOST,
+    IsWindowVisible, SetWindowLongPtrW, SetWindowPos, GWLP_HWNDPARENT, GWL_EXSTYLE, GW_HWNDPREV, GW_OWNER,
+    HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WS_EX_TOPMOST,
 };
 
 /// Écart avec les bords de la barre des tâches, en pixels physiques
@@ -67,9 +67,29 @@ pub fn keep_on_top(raw: isize) {
 
 /// Fenêtre de la barre flottante à garder au-dessus de la barre des tâches (0 : aucune).
 static GUARDED: AtomicIsize = AtomicIsize::new(0);
+/// La barre flottante doit-elle être rattachée à la barre des tâches (modes « taskbar-* ») ?
+static ATTACHED: AtomicBool = AtomicBool::new(false);
 
 pub fn guard(raw: Option<isize>) {
     GUARDED.store(raw.unwrap_or(0), Ordering::Relaxed);
+}
+
+/// Rattache la fenêtre à la barre des tâches, ou l'en détache.
+///
+/// Une fenêtre « possédée » reste toujours au-dessus de sa propriétaire : quand Windows remonte
+/// la barre des tâches, il remonte la barre flottante dans le même mouvement, sans le moindre
+/// clignotement. Elle suit aussi la barre des tâches quand celle-ci s'efface (plein écran).
+pub fn attach(raw: isize, on: bool) {
+    ATTACHED.store(on, Ordering::Relaxed);
+    let own = HWND(raw as _);
+    let target = if on { unsafe { FindWindowW(w!("Shell_TrayWnd"), None).ok() } } else { None };
+    unsafe {
+        let current = GetWindow(own, GW_OWNER).unwrap_or_default();
+        let wanted = target.unwrap_or_default();
+        if current != wanted {
+            SetWindowLongPtrW(own, GWLP_HWNDPARENT, wanted.0 as isize);
+        }
+    }
 }
 
 /// La barre des tâches (principale ou d'un second écran) est-elle passée au-dessus de nous ?
@@ -109,7 +129,14 @@ pub fn start_guard() {
             if !IsWindowVisible(own).as_bool() {
                 continue;
             }
-            // Statut « toujours au premier plan » perdu : n'importe quelle appli passerait devant.
+            // Explorateur redémarré : nouvelle barre des tâches, on s'y rattache.
+            if ATTACHED.load(Ordering::Relaxed) {
+                let tb = FindWindowW(w!("Shell_TrayWnd"), None).unwrap_or_default();
+                if !tb.0.is_null() && GetWindow(own, GW_OWNER).unwrap_or_default() != tb {
+                    attach(raw, true);
+                }
+            }
+            // Filet de sécurité : statut « toujours au premier plan » perdu, ou recouverte malgré tout.
             let lost_topmost = GetWindowLongPtrW(own, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST.0 == 0;
             if lost_topmost || taskbar_above(own) {
                 keep_on_top(raw);

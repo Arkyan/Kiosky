@@ -244,6 +244,8 @@ fn fit_widget(app: AppHandle, state: State<'_, AppState>, width: f64, height: f6
         let _ = w.show();
     }
     if let Some(raw) = widget_raw(&app) {
+        // Sur la barre des tâches : rattachée à elle, donc jamais recouverte.
+        widget::attach(raw, s.widget_mode != "free");
         widget::keep_on_top(raw);
         widget::guard(Some(raw));
     }
