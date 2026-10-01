@@ -15,6 +15,7 @@ mod ports;
 mod search;
 mod projects;
 mod settings;
+mod shell;
 mod startup;
 mod units;
 mod util;
@@ -227,6 +228,7 @@ fn save_settings(app: AppHandle, state: State<'_, AppState>, mut settings: Setti
     settings.cleaned_total = old.cleaned_total;
     settings.project_opened = old.project_opened.clone();
     settings.launch_counts = old.launch_counts.clone();
+    settings.shell_history = old.shell_history.clone();
     if let Some(tray) = app.tray_by_id("toolbox") {
         if old.monitor_tooltip && !settings.monitor_tooltip {
             let _ = tray.set_tooltip(Some("Toolbox"));
@@ -243,6 +245,15 @@ fn save_settings(app: AppHandle, state: State<'_, AppState>, mut settings: Setti
 
 #[tauri::command]
 async fn convert(state: State<'_, AppState>, input: String) -> Result<Vec<converter::ConvResult>, String> {
+    // « >ipconfig » : une commande, rien d'autre.
+    if input.trim_start().starts_with('>') {
+        let history = state.settings.lock().unwrap().shell_history.clone();
+        return Ok(search::shell(&input, &history));
+    }
+    // « gh tauri » : recherche web directe.
+    if let Some(web) = search::web(&input) {
+        return Ok(web);
+    }
     let mut out = converter::convert(&input).await;
     // « kill 3000 » / « port 3000 » : la commande suffit, pas de recherche d'applis.
     if out.iter().any(|r| r.action.starts_with("kill:") || r.title.starts_with("Port ")) {
@@ -251,7 +262,28 @@ async fn convert(state: State<'_, AppState>, input: String) -> Result<Vec<conver
     let settings = state.settings.lock().unwrap().clone();
     let projects = projects::load_cache(&projects_cache(&state));
     out.extend(search::search(&input, &settings, &projects));
+    // En dernier recours, comme le menu Démarrer : chercher sur le web.
+    if let Some(web) = search::web_fallback(&input) {
+        out.push(web);
+    }
     Ok(out)
+}
+
+/// Exécute une commande « > » et renvoie sa sortie (retenue dans l'historique).
+#[tauri::command]
+async fn run_shell(state: State<'_, AppState>, cmd: String) -> Result<shell::ShellOutput, String> {
+    let cmd = cmd.trim().to_string();
+    if cmd.is_empty() {
+        return Err("Commande vide".into());
+    }
+    {
+        let mut s = state.settings.lock().unwrap();
+        s.shell_history.retain(|c| c != &cmd);
+        s.shell_history.insert(0, cmd.clone());
+        s.shell_history.truncate(20);
+        let _ = settings::save(&state.path, &s);
+    }
+    blocking(move || shell::run(&cmd)).await
 }
 
 /// Icônes des résultats de la palette (action → image PNG en data URL).
@@ -554,6 +586,22 @@ async fn run_action(app: AppHandle, state: State<'_, AppState>, action: String) 
             util::shell_open(&arg)?;
         }
         "system" => system_action(&arg)?,
+        "web" => {
+            if !arg.starts_with("https://") {
+                return Err("Adresse non autorisée".into());
+            }
+            util::shell_open(&arg)?;
+        }
+        "shellterm" => {
+            {
+                let mut s = state.settings.lock().unwrap();
+                s.shell_history.retain(|c| c != &arg);
+                s.shell_history.insert(0, arg.clone());
+                s.shell_history.truncate(20);
+            }
+            shell::open_in_terminal(&arg)?;
+            return Ok(()); // une commande ponctuelle : pas de compteur d'usage
+        }
         "page" => {
             show_main(&app);
             let _ = app.emit_to("main", "navigate", arg.clone());
@@ -737,6 +785,7 @@ fn main() {
             run_action,
             palette_home,
             get_icons,
+            run_shell,
             get_autostart,
             set_autostart,
         ])

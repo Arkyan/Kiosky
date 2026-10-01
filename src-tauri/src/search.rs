@@ -432,3 +432,101 @@ mod tests {
         assert!(s("Edge", "ed").unwrap() > s("Microsoft Edge", "ed").unwrap());
     }
 }
+
+// ───────────────────────────── Recherche web ─────────────────────────────
+
+/// (préfixe, nom, URL avec {} à la place de la recherche)
+pub const ENGINES: &[(&str, &str, &str)] = &[
+    ("g", "Google", "https://www.google.com/search?q={}"),
+    ("yt", "YouTube", "https://www.youtube.com/results?search_query={}"),
+    ("gh", "GitHub", "https://github.com/search?q={}&type=repositories"),
+    ("mdn", "MDN", "https://developer.mozilla.org/fr/search?q={}"),
+    ("npm", "npm", "https://www.npmjs.com/search?q={}"),
+    ("crates", "crates.io", "https://crates.io/search?q={}"),
+    ("rs", "docs.rs", "https://docs.rs/releases/search?query={}"),
+    ("so", "Stack Overflow", "https://stackoverflow.com/search?q={}"),
+    ("wiki", "Wikipédia", "https://fr.wikipedia.org/w/index.php?search={}"),
+    ("maps", "Google Maps", "https://www.google.com/maps/search/{}"),
+    ("tr", "Google Traduction", "https://translate.google.com/?sl=auto&tl=fr&text={}"),
+    ("ddg", "DuckDuckGo", "https://duckduckgo.com/?q={}"),
+];
+
+/// Encodage d'URL (RFC 3986) : seuls les caractères non réservés restent tels quels.
+fn url_encode(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+fn web_result(name: &str, url_tpl: &str, query: &str) -> ConvResult {
+    let url = url_tpl.replace("{}", &url_encode(query));
+    ConvResult {
+        title: "Web".into(),
+        value: format!("Rechercher « {query} » sur {name}"),
+        copy: url.clone(),
+        hint: String::new(),
+        error: false,
+        action: format!("web:{url}"),
+    }
+}
+
+/// « gh tauri » → recherche GitHub. None si la requête ne commence pas par un préfixe connu.
+pub fn web(q: &str) -> Option<Vec<ConvResult>> {
+    let trimmed = q.trim_start();
+    let (prefix, rest) = trimmed.split_once(' ').unwrap_or((trimmed, ""));
+    let (_, name, url) = ENGINES.iter().find(|(p, _, _)| p.eq_ignore_ascii_case(prefix))?;
+    let rest = rest.trim();
+    if rest.is_empty() {
+        // « gh » seul : peut aussi être le début d'un nom d'application, on ne bloque rien.
+        return if trimmed.ends_with(' ') {
+            Some(vec![ConvResult {
+                title: "Web".into(),
+                value: format!("Rechercher sur {name}…"),
+                copy: String::new(),
+                hint: "Tape ta recherche après le préfixe".into(),
+                error: false,
+                action: String::new(),
+            }])
+        } else {
+            None
+        };
+    }
+    Some(vec![web_result(name, url, rest)])
+}
+
+/// Dernière ligne de résultats : chercher la requête sur Google.
+pub fn web_fallback(q: &str) -> Option<ConvResult> {
+    let q = q.trim();
+    (q.chars().count() >= 2).then(|| web_result("Google", ENGINES[0].2, q))
+}
+
+// ───────────────────────────── Commandes « > » ─────────────────────────────
+
+/// « >ipconfig » : exécuter la commande (sortie affichée dans la palette) ou l'ouvrir dans un terminal.
+/// « > » seul : les dernières commandes.
+pub fn shell(q: &str, history: &[String]) -> Vec<ConvResult> {
+    let cmd = q.trim_start().trim_start_matches('>').trim();
+    let item = |value: String, hint: &str, action: String| ConvResult {
+        title: "Commande".into(),
+        value,
+        copy: String::new(),
+        hint: hint.into(),
+        error: false,
+        action,
+    };
+    if cmd.is_empty() {
+        if history.is_empty() {
+            return vec![item("Tape une commande après >".into(), "PowerShell : ipconfig, ping google.com, git --version…", String::new())];
+        }
+        return history.iter().take(8).map(|h| item(h.clone(), "Récemment exécutée", format!("shell:{h}"))).collect();
+    }
+    vec![
+        item(cmd.to_string(), "Entrée : exécuter et afficher le résultat", format!("shell:{cmd}")),
+        item(format!("{cmd}"), "Ouvrir dans un terminal (commandes interactives)", format!("shellterm:{cmd}")),
+    ]
+}

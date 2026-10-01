@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { listen } from "@tauri-apps/api/event";
-  import { api, copyText, type ConvResult } from "./api";
+  import { api, copyText, type ConvResult, type ShellOutput } from "./api";
   import Icon from "./Icon.svelte";
 
   let { palette = false }: { palette?: boolean } = $props();
@@ -20,6 +20,28 @@
   let confirming = $state(-1);
   /** Palette vide : on affiche les éléments les plus utilisés */
   let home = $state(false);
+  /** Commande « > » : en cours, puis sa sortie (affichée à la place des résultats) */
+  let running = $state("");
+  let shellOut = $state<(ShellOutput & { cmd: string }) | null>(null);
+  let outCopied = $state(false);
+
+  async function runShell(cmd: string) {
+    running = cmd;
+    shellOut = null;
+    try {
+      shellOut = { ...(await api.runShell(cmd)), cmd };
+    } catch (e) {
+      shellOut = { output: String(e), code: -1, ms: 0, timed_out: false, cmd };
+    }
+    running = "";
+  }
+
+  function closeShell() {
+    shellOut = null;
+    running = "";
+    input?.focus();
+  }
+
   /** Vraies icônes (applications, éditeurs, dossiers), gardées pour toute la session */
   let icons = $state<Record<string, string>>({});
 
@@ -85,7 +107,7 @@
   /** Icône du bouton de droite : l'action du résultat, ou la copie. */
   function actionIcon(r: ConvResult): string {
     if (!r.action) return "copy";
-    return { kill: "stop", open: "globe", system: "power" }[verb(r)] ?? "bolt";
+    return { kill: "stop", open: "globe", web: "globe", system: "power", shell: "bolt", shellterm: "terminal" }[verb(r)] ?? "bolt";
   }
 
   /** Icône de gauche pour les résultats de recherche (applications, projets…) */
@@ -99,6 +121,9 @@
       system: "power",
       page: "calc",
       pick: "pipette",
+      web: "globe",
+      shell: "terminal",
+      shellterm: "terminal",
     };
     return icons[verb(r)] ?? null;
   }
@@ -115,6 +140,11 @@
         return;
       }
       confirming = -1;
+      // « >ipconfig » : la sortie s'affiche dans la palette, qui reste ouverte.
+      if (verb(r) === "shell") {
+        runShell(r.action.slice("shell:".length));
+        return;
+      }
       // Applications, projets, « kill 3000 »… : Entrée lance l'action au lieu de copier.
       try {
         await api.runAction(r.action);
@@ -131,6 +161,17 @@
   }
 
   async function onkeydown(e: KeyboardEvent) {
+    if (shellOut || running) {
+      // Panneau de sortie : Échap revient aux résultats, Entrée relance.
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeShell();
+      } else if (e.key === "Enter" && shellOut) {
+        e.preventDefault();
+        runShell(shellOut.cmd);
+      }
+      return;
+    }
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       if (!results.length) return;
@@ -177,7 +218,10 @@
     <input
       bind:this={input}
       bind:value={query}
-      oninput={() => run()}
+      oninput={() => {
+        if (shellOut) closeShell();
+        run();
+      }}
       {onkeydown}
       placeholder={palette ? "Application, projet, dossier, paramètre… ou 10 km en miles, 2^10" : "10 km en miles · 50 eur usd · 14h tokyo · 2^10 · kill 3000"}
       spellcheck="false"
@@ -188,6 +232,43 @@
     {/if}
   </div>
 
+  {#if running || shellOut}
+    <div class="shell">
+      <div class="shell-head">
+        <span class="mono cmd">&gt; {shellOut?.cmd ?? running}</span>
+        {#if running}
+          <span class="shell-meta"><span class="spin" style="display:flex"><Icon name="refresh" size={13} /></span> En cours…</span>
+        {:else if shellOut}
+          <span class="shell-meta" class:bad={shellOut.code !== 0}>
+            {shellOut.timed_out ? "arrêtée après 20 s" : shellOut.code === 0 ? "terminée" : `code ${shellOut.code}`}
+            · {(shellOut.ms / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} s
+          </span>
+          <button
+            class="btn ghost mini-btn"
+            onclick={async () => {
+              await copyText(shellOut!.output);
+              outCopied = true;
+              setTimeout(() => (outCopied = false), 900);
+            }}
+          >
+            <Icon name={outCopied ? "check" : "copy"} size={13} /> Copier
+          </button>
+          <button class="btn ghost mini-btn" onclick={() => runShell(shellOut!.cmd)}><Icon name="refresh" size={13} /> Relancer</button>
+          <button
+            class="btn ghost mini-btn"
+            onclick={() => {
+              api.runAction(`shellterm:${shellOut!.cmd}`);
+              if (palette) api.hidePalette();
+            }}
+          >
+            <Icon name="terminal" size={13} /> Terminal
+          </button>
+        {/if}
+      </div>
+      <pre class="mono">{shellOut ? shellOut.output || "(aucune sortie)" : ""}</pre>
+      <div class="shell-foot">Échap : retour aux résultats · Entrée : relancer</div>
+    </div>
+  {:else}
   <div class="results" bind:this={list}>
     {#if home}<div class="section">Les plus utilisés</div>{/if}
     {#each results as r, i (i)}
@@ -236,6 +317,7 @@
       {/if}
     {/each}
   </div>
+  {/if}
 </div>
 
 <style>
@@ -317,6 +399,73 @@
     text-align: left;
     cursor: pointer;
     animation: enter 0.18s ease-out both;
+  }
+  .shell {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    margin: 0 8px 8px;
+    border: 1px solid var(--stroke);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--input) 70%, transparent);
+    overflow: hidden;
+  }
+  .shell-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px 6px 12px;
+    border-bottom: 1px solid var(--stroke);
+  }
+  .cmd {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+  .shell-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    color: var(--ok);
+    white-space: nowrap;
+  }
+  .shell-meta.bad {
+    color: var(--bad);
+  }
+  .mini-btn {
+    height: 26px;
+    padding: 0 8px;
+    gap: 5px;
+    font-size: 12px;
+  }
+  .shell pre {
+    flex: 1;
+    min-height: 0;
+    margin: 0;
+    padding: 10px 12px;
+    overflow: auto;
+    font-size: 12px;
+    line-height: 1.45;
+    white-space: pre;
+    user-select: text;
+  }
+  /* Dans la page Convertisseur (pas de hauteur fixe) : on borne la sortie. */
+  .box:not(.palette) .shell {
+    margin: 10px 0 0;
+  }
+  .box:not(.palette) .shell pre {
+    max-height: 380px;
+  }
+  .shell-foot {
+    padding: 4px 12px 6px;
+    font-size: 11px;
+    color: var(--text-3);
   }
   .section {
     padding: 6px 14px 4px;

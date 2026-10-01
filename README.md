@@ -5,7 +5,7 @@ Rust + Tauri 2 pour la logique, Svelte 5 pour l'interface (style Windows 11, Mic
 
 | Module | Ce qu'il fait |
 |---|---|
-| **Palette** | Raccourci global (`Ctrl+Shift+Space` par défaut) : recherche façon menu Démarrer (applications, projets, dossiers, Paramètres Windows, outils système, verrouiller/veille/redémarrer, pages de Toolbox) qui apprend de tes habitudes, plus calculs, unités, devises, fuseaux, encodages et `kill 3000` / `port 3000` |
+| **Palette** | Raccourci global (`Ctrl+Shift+Space` par défaut) : recherche façon menu Démarrer (applications, projets, dossiers, Paramètres Windows, outils système, verrouiller/veille/redémarrer, pages de Toolbox) qui apprend de tes habitudes, plus calculs, unités, devises, fuseaux, encodages `kill 3000` / `port 3000`, recherche web (`g`, `yt`, `gh`, `mdn`, `npm`, `crates`, `so`, `wiki`…) et commandes `>ipconfig` avec la sortie affichée |
 | **Expanseur de texte** | `;mail` → ton adresse, `;sig` → ta signature, `;date` → la date du jour, dans toutes les applications |
 | **Pipette** | Raccourci global (`Win+Shift+C` par défaut) : loupe sous la souris, clic = couleur copiée en HEX, RGB ou HSL, historique |
 | **Projets** | Détecte les projets (Git, Node, Rust, PHP, .NET, Android…), branche et modifications non commitées, ouverture dans l'éditeur adapté |
@@ -52,6 +52,7 @@ src/                     Interface Svelte
 src-tauri/src/
   main.rs                Fenêtres, zone de notification, raccourci, commandes
   search.rs              Recherche de la palette (Get-StartApps, score, usage)
+  shell.rs               Commandes « > » de la palette (PowerShell, délai max 20 s)
   converter.rs           Moteurs de conversion (devises, heures, encodages…)
   units.rs / calc.rs     Unités et calculatrice (testés : `cargo test`)
   expander.rs            Hook clavier + saisie simulée

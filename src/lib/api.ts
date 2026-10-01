@@ -37,6 +37,7 @@ export type GitStatus = { path: string; branch: string | null; changes: number; 
 export type EnvVar = { name: string; value: string; expand: boolean };
 export type EnvState = { user: EnvVar[]; machine: EnvVar[]; is_admin: boolean; undo: string | null };
 export type PathCheck = { entry: string; expanded: string; exists: boolean };
+export type ShellOutput = { output: string; code: number; ms: number; timed_out: boolean };
 export type ScanProgress = { dirs: number; found: number };
 export type FolderShortcut = { name: string; path: string; shortcut: string; open_with: string };
 export type KnownFolder = { name: string; path: string };
@@ -165,6 +166,7 @@ export const api = {
   openUrl: (url: string) => invoke<void>("open_url", { url }),
   runAction: (action: string) => invoke<void>("run_action", { action }),
   paletteHome: () => invoke<ConvResult[]>("palette_home"),
+  runShell: (cmd: string) => invoke<ShellOutput>("run_shell", { cmd }),
   getIcons: (actions: string[]) => invoke<Record<string, string>>("get_icons", { actions }),
 
   getAutostart: () => invoke<boolean>("get_autostart"),
