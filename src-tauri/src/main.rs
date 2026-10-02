@@ -279,7 +279,10 @@ fn apply_widget(app: &AppHandle, s: &Settings) {
         if app.get_webview_window("widget").is_some() {
             let _ = app.emit_to("widget", "widget-config", ());
         } else {
-            create_widget(app);
+            // Depuis un fil à part : apply_widget est appelée par save_settings, une commande qui
+            // tourne sur le fil principal, et sous Windows créer une fenêtre depuis ce fil la bloque.
+            let app = app.clone();
+            std::thread::spawn(move || create_widget(&app));
         }
     } else {
         // Désactivée : on libère ses deux moteurs web plutôt que de les garder cachés.
