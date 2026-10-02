@@ -218,6 +218,11 @@ pub fn start_guard() {
     });
 }
 
+/// Fenêtre au premier plan (handle brut, 0 si aucune).
+pub fn foreground() -> isize {
+    unsafe { GetForegroundWindow().0 as isize }
+}
+
 /// Une application occupe-t-elle tout l'écran (jeu, vidéo) ? Le bureau lui-même ne compte pas.
 pub fn fullscreen_app(own: isize) -> bool {
     unsafe {

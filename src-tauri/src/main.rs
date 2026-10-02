@@ -1178,7 +1178,18 @@ fn main() {
                 let _ = window.hide();
             }
             WindowEvent::Focused(false) if window.label() == "palette" => {
-                let _ = window.hide();
+                // Juste après sa création, le moteur web prend le focus à l'intérieur de la
+                // fenêtre et Windows le signale comme une perte de focus : la palette se refermait
+                // à sa première ouverture. On ne la cache donc que si une autre fenêtre est
+                // vraiment passée au premier plan (clic ailleurs, Alt+Tab…).
+                let w = window.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis(60)); // le temps que Windows bascule
+                    let own = w.hwnd().map(|h| h.0 as isize).unwrap_or(0);
+                    if widget::foreground() != own {
+                        let _ = w.hide();
+                    }
+                });
             }
             WindowEvent::Moved(pos) if window.label() == "widget" => {
                 let app = window.app_handle().clone();
