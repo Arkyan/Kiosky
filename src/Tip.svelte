@@ -32,18 +32,23 @@
 </div>
 
 <style>
+  /* L'infobulle remplit la fenêtre ; ses coins arrondis sont dessinés par Windows. */
   :global(html),
   :global(body) {
-    background: transparent;
+    background: rgb(40, 40, 40);
     overflow: hidden;
+  }
+  @media (prefers-color-scheme: light) {
+    :global(html),
+    :global(body) {
+      background: rgb(252, 252, 252);
+    }
   }
   .tip {
     display: inline-block;
     max-width: 340px;
     padding: 8px 11px;
-    border-radius: 8px;
-    background: rgba(40, 40, 40, 0.97);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgb(40, 40, 40);
     color: #f3f3f3;
     font-size: 12px;
     line-height: 1.45;
@@ -52,8 +57,7 @@
   }
   @media (prefers-color-scheme: light) {
     .tip {
-      background: rgba(252, 252, 252, 0.98);
-      border-color: rgba(0, 0, 0, 0.12);
+      background: rgb(252, 252, 252);
       color: #1a1a1a;
     }
   }

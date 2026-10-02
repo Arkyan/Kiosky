@@ -18,7 +18,7 @@ Rust + Tauri 2 pour la logique, Svelte 5 pour l'interface (style Windows 11, Mic
 | **Nettoyage** | Temp, caches des navigateurs, rapports d'erreur, Windows Update, caches npm/pip, corbeille, avec la place gagnée. Recherche de dossiers par nom (`node_modules`, `target`, `.venv`…) dans les dossiers choisis |
 | **Ports** | Qui écoute sur quel port (« le port 3000 est-il libre ? »), processus propriétaire, bouton pour l'arrêter. Les ports de Windows peuvent être masqués |
 
-**Barre flottante** (Réglages → Barre flottante) : petite barre toujours visible, posée sur la barre des tâches (à gauche ou à droite) ou déplaçable, avec les éléments choisis : CPU, RAM, réseau, heure, date, batterie, serveurs locaux, conteneurs Docker, état Git du projet favori, musique en cours (pochette, titre, ⏮ ⏯ ⏭), volume (molette). Clic sur un élément : son action ; survol : le détail, toujours affiché au-dessus de la barre. Elle se cache quand une application est en plein écran.
+**Barre flottante** (Réglages → Barre flottante) : petite barre toujours visible, posée sur la barre des tâches (à gauche ou à droite) ou déplaçable, avec les éléments choisis : CPU, RAM, réseau, heure, date, batterie, serveurs locaux, conteneurs Docker, musique en cours (pochette, titre, ⏮ ⏯ ⏭), volume (molette). Clic sur un élément : son action ; survol : le détail, toujours affiché au-dessus de la barre. Elle se cache quand une application est en plein écran.
 
 Chaque module peut être désactivé dans Réglages → Modules (il disparaît de l'interface et ne tourne plus en arrière-plan), et chaque source de la palette dans Réglages → Palette.
 

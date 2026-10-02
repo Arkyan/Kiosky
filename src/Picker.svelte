@@ -68,21 +68,23 @@
 </div>
 
 <style>
+  /* La loupe remplit la fenêtre ; ses coins arrondis sont dessinés par Windows. */
   :global(html),
   :global(body) {
-    background: transparent;
+    background: #f9f9f9;
   }
   .loupe {
     --bg: #f9f9f9;
-    margin: 6px;
-    padding: 6px;
-    border-radius: 12px;
+    height: 100%;
+    padding: 8px;
     background: var(--bg);
-    border: 1px solid var(--stroke-strong);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
     transition: opacity 0.1s;
   }
   @media (prefers-color-scheme: dark) {
+    :global(html),
+    :global(body) {
+      background: #2c2c2c;
+    }
     .loupe {
       --bg: #2c2c2c;
     }

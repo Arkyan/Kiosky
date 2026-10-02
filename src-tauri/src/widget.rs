@@ -80,6 +80,32 @@ pub fn set_owner(owned: isize, owner: isize) {
     }
 }
 
+/// Coins arrondis dessinés par Windows 11 (les fenêtres sont opaques : plus de coins transparents).
+pub fn round_corners(raw: isize, small: bool) {
+    use windows::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DWMWCP_ROUNDSMALL,
+    };
+    let pref = if small { DWMWCP_ROUNDSMALL } else { DWMWCP_ROUND };
+    unsafe {
+        let _ = DwmSetWindowAttribute(
+            HWND(raw as _),
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            &pref as *const _ as *const _,
+            std::mem::size_of_val(&pref) as u32,
+        );
+    }
+}
+
+/// Thème clair de Windows pour les applications ?
+pub fn light_theme() -> bool {
+    use winreg::enums::HKEY_CURRENT_USER;
+    winreg::RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
+        .and_then(|k| k.get_value::<u32, _>("AppsUseLightTheme"))
+        .map(|v| v == 1)
+        .unwrap_or(false)
+}
+
 /// Remet la fenêtre au-dessus de tout : un clic sur la barre des tâches la ferait passer dessous.
 pub fn keep_on_top(raw: isize) {
     unsafe {

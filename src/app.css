@@ -5,6 +5,7 @@
   --font-display: "Segoe UI Variable Display", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
   --mono: "Cascadia Code", "Cascadia Mono", Consolas, monospace;
 
+  --window: #f3f3f3;
   --text: #1a1a1a;
   --text-2: #5d5d5d;
   --text-3: #8a8a8a;
@@ -30,6 +31,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --window: #202020;
     --text: #ffffff;
     --text-2: rgba(255, 255, 255, 0.72);
     --text-3: rgba(255, 255, 255, 0.48);
@@ -60,8 +62,8 @@ html,
 body {
   margin: 0;
   height: 100%;
-  /* Transparent pour laisser apparaître l'effet Mica / Acrylique de Windows */
-  background: transparent;
+  /* Fond uni (fenêtres opaques) : la même teinte que Windows 11 */
+  background: var(--window);
   color: var(--text);
   font-family: var(--font);
   font-size: 14px;

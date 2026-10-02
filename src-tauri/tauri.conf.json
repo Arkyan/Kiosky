@@ -20,14 +20,9 @@
         "minHeight": 520,
         "center": true,
         "visible": false,
-        "transparent": true,
-        "windowEffects": {
-          "effects": [
-            "mica"
-          ]
-        },
+        "transparent": false,
         "create": false,
-        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --renderer-process-limit=1"
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --renderer-process-limit=1 --disable-gpu"
       },
       {
         "label": "palette",
@@ -38,28 +33,23 @@
         "center": true,
         "visible": false,
         "decorations": false,
-        "transparent": true,
+        "transparent": false,
         "shadow": true,
         "resizable": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,
-        "windowEffects": {
-          "effects": [
-            "acrylic"
-          ]
-        },
         "create": false,
-        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --renderer-process-limit=1"
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --renderer-process-limit=1 --disable-gpu"
       },
       {
         "label": "picker",
         "title": "Pipette",
         "url": "index.html#picker",
-        "width": 180,
-        "height": 232,
+        "width": 168,
+        "height": 216,
         "visible": false,
         "decorations": false,
-        "transparent": true,
+        "transparent": false,
         "shadow": false,
         "resizable": false,
         "alwaysOnTop": true,
@@ -67,7 +57,7 @@
         "focus": false,
         "focusable": false,
         "create": false,
-        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --renderer-process-limit=1"
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --renderer-process-limit=1 --disable-gpu"
       },
       {
         "label": "widget",
@@ -77,14 +67,14 @@
         "height": 40,
         "visible": false,
         "decorations": false,
-        "transparent": true,
+        "transparent": false,
         "shadow": false,
         "resizable": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "focus": false,
         "create": false,
-        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --renderer-process-limit=1"
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --renderer-process-limit=1 --disable-gpu"
       },
       {
         "label": "tip",
@@ -94,7 +84,7 @@
         "height": 80,
         "visible": false,
         "decorations": false,
-        "transparent": true,
+        "transparent": false,
         "shadow": false,
         "resizable": false,
         "alwaysOnTop": true,
@@ -102,7 +92,7 @@
         "focus": false,
         "focusable": false,
         "create": false,
-        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --renderer-process-limit=1"
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --renderer-process-limit=1 --disable-gpu"
       }
     ],
     "security": {

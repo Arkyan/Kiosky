@@ -50,7 +50,22 @@ fn window(app: &AppHandle, label: &str) -> Option<WebviewWindow> {
         return Some(w);
     }
     let config = app.config().app.windows.iter().find(|w| w.label == label)?.clone();
-    let w = match WebviewWindowBuilder::from_config(app, &config).and_then(|b| b.build()) {
+    // Fond peint dès la création, dans la couleur de la page : pas de flash blanc à l'ouverture.
+    let light = widget::light_theme();
+    let (r, g, b) = match (label, light) {
+        ("palette", false) => (43, 43, 43),
+        ("palette", true) => (249, 249, 249),
+        ("picker", false) => (44, 44, 44),
+        ("tip", false) => (40, 40, 40),
+        ("tip", true) => (252, 252, 252),
+        ("main", true) => (243, 243, 243),
+        (_, true) => (249, 249, 249),
+        (_, false) => (32, 32, 32),
+    };
+    let built = WebviewWindowBuilder::from_config(app, &config)
+        .map(|builder| builder.background_color(tauri::window::Color(r, g, b, 255)))
+        .and_then(|b| b.build());
+    let w = match built {
         Ok(w) => w,
         Err(e) => {
             eprintln!("Fenêtre « {label} » : {e}");
@@ -58,6 +73,10 @@ fn window(app: &AppHandle, label: &str) -> Option<WebviewWindow> {
         }
     };
     let raw = w.hwnd().ok().map(|h| h.0 as isize);
+    if let (Some(raw), true) = (raw, label != "main") {
+        // Barre et infobulle : petits arrondis ; palette et loupe : arrondis normaux.
+        widget::round_corners(raw, matches!(label, "widget" | "tip"));
+    }
     match label {
         // La loupe de la pipette laisse passer la souris.
         "picker" => {

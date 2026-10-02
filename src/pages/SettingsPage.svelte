@@ -16,7 +16,6 @@
     { id: "battery", label: "Batterie", icon: "bolt" },
     { id: "ports", label: "Serveurs locaux", icon: "plug" },
     { id: "docker", label: "Conteneurs Docker", icon: "box" },
-    { id: "git", label: "Projet favori (Git)", icon: "branch" },
     { id: "media", label: "Musique en cours", icon: "volume" },
     { id: "volume", label: "Volume", icon: "volume" },
   ];
@@ -199,21 +198,6 @@
         onchange={(v) => { s.widget_vertical = v; saveSettings(0); }}
       />
     </div>
-    <div class="row">
-      <div class="ico"><Icon name="sparkle" size={18} /></div>
-      <div class="grow">
-        <div class="strong">Opacité du fond</div>
-        <input
-          type="range"
-          min="30"
-          max="100"
-          value={Math.round(s.widget_opacity * 100)}
-          style:--p={`${((s.widget_opacity * 100 - 30) / 70) * 100}%`}
-          oninput={(e) => { s.widget_opacity = +e.currentTarget.value / 100; saveSettings(150); }}
-        />
-      </div>
-      <span class="small muted pct">{Math.round(s.widget_opacity * 100)} %</span>
-    </div>
     <div class="witems">
       <div class="small muted whead">Éléments affichés, de gauche à droite</div>
       {#each widgetOrder as w, i (w.id)}
@@ -223,7 +207,6 @@
           <Icon name={w.icon} size={15} />
           <span class="grow">
             {w.label}
-            {#if w.id === "git"}<span class="small muted"> · premier projet favori ⭐ de la page Projets</span>{/if}
             {#if w.id === "battery"}<span class="small muted"> · masquée sur un PC fixe</span>{/if}
             {#if w.id === "media"}<span class="small muted"> · Spotify, YouTube, VLC… avec pochette et ⏮ ⏯ ⏭</span>{/if}
             {#if w.id === "volume"}<span class="small muted"> · molette pour régler</span>{/if}
@@ -312,10 +295,6 @@
     color: var(--text);
     font-weight: 600;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-  }
-  .pct {
-    min-width: 40px;
-    text-align: right;
   }
   .wconf {
     transition: opacity 0.15s;

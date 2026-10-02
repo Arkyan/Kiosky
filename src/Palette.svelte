@@ -16,11 +16,19 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-    /* Teinte légère par-dessus l'acrylique pour garder un bon contraste */
-    background: color-mix(in srgb, var(--input) 40%, transparent);
+    background: #f9f9f9;
   }
   .palette-root > :global(.box) {
     flex: 1;
+  }
+  @media (prefers-color-scheme: dark) {
+    .palette-root {
+      background: #2b2b2b;
+    }
+  }
+  :global(html),
+  :global(body) {
+    background: transparent;
   }
   footer {
     display: flex;

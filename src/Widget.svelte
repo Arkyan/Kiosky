@@ -3,7 +3,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import Icon from "./lib/Icon.svelte";
-  import { api, fmtBytes, type Project, type Sample, type Settings, type TopProcs } from "./lib/api";
+  import { api, fmtBytes, type Sample, type Settings, type TopProcs } from "./lib/api";
 
   // Barre flottante : fenêtre transparente qui s'ajuste à son contenu (Rust la place et l'affiche).
   // Clic sur un élément : son action. Survol : le détail en infobulle. Molette sur le volume : réglage.
@@ -17,8 +17,6 @@
   let battery = $state<{ present: boolean; percent: number; charging: boolean } | null>(null);
   let devPorts = $state<{ port: number; process: string }[]>([]);
   let docker = $state<{ running: number; total: number; up: boolean; names: string[] } | null>(null);
-  let git = $state<{ name: string; path: string; branch: string; changes: number; ahead: number; behind: number } | null>(null);
-  let projects: Project[] = [];
   let media = $state<Media | null>(null);
   let volume = $state<{ volume: number; muted: boolean } | null>(null);
   let taskbarH = $state<number | null>(null);
@@ -40,7 +38,6 @@
     refreshSlow();
     refreshFast();
     refreshDocker();
-    refreshGit();
     await fit(true);
   }
 
@@ -75,19 +72,6 @@
       : null;
   }
 
-  async function refreshGit() {
-    if (!has("git") || !settings) return;
-    const fav = settings.project_favorites[0];
-    if (!fav) {
-      git = null;
-      return;
-    }
-    if (!projects.length) projects = await api.getProjects().catch(() => []);
-    const [st] = await api.gitStatus([fav]).catch(() => []);
-    const name = fav.split(/[\\/]/).filter(Boolean).pop() ?? fav;
-    git = { name, path: fav, branch: st?.branch ?? "inconnue", changes: st?.changes ?? 0, ahead: st?.ahead ?? 0, behind: st?.behind ?? 0 };
-  }
-
   // ─── Taille : la fenêtre épouse la barre ───
 
   let lastSize = "";
@@ -102,7 +86,7 @@
   }
 
   $effect(() => {
-    void [sample, battery, devPorts, docker, git, media, volume, items, vertical, onTaskbar];
+    void [sample, battery, devPorts, docker, media, volume, items, vertical, onTaskbar];
     fit();
   });
 
@@ -113,7 +97,6 @@
       setInterval(refreshFast, 1500),
       setInterval(refreshSlow, 5000),
       setInterval(refreshDocker, 15000),
-      setInterval(refreshGit, 30000),
     ];
     const uns = [
       listen<Sample>("monitor-sample", (e) => (sample = e.payload)),
@@ -167,11 +150,6 @@
         return api.runAction("page:ports");
       case "docker":
         return api.runAction("page:containers");
-      case "git": {
-        if (!git) return api.runAction("page:projects");
-        const editor = projects.find((p) => p.path === git!.path)?.editor ?? "vscode";
-        return api.openProject(git.path, editor);
-      }
       case "battery":
         return api.runAction("uri:ms-settings:powersleep");
       case "media-toggle":
@@ -291,12 +269,6 @@
         : `Conteneurs en cours : ${docker.running} sur ${docker.total}` +
           (docker.names.length ? "\n" + docker.names.slice(0, 8).join("\n") : "") +
           "\n\nClic : ouvrir la page Conteneurs",
-    git: git
-      ? `${git.name}\n\nBranche\t${git.branch}\nModifications\t${git.changes || "aucune"}` +
-        (git.ahead ? `\nÀ pousser\t${git.ahead} commit(s)` : "") +
-        (git.behind ? `\nÀ récupérer\t${git.behind} commit(s)` : "") +
-        "\n\nClic : ouvrir le projet"
-      : "",
     media: media
       ? `${media.title}${media.artist ? `\n${media.artist}` : ""}\n\n${media.app}\t${media.playing ? "en lecture" : "en pause"}\n\nClic sur le titre : ouvrir ${media.app}`
       : "Aucune lecture en cours\n\nLance Spotify, YouTube, VLC…",
@@ -311,7 +283,6 @@
   class:vertical
   class:taskbar={onTaskbar}
   class:draggable={!onTaskbar}
-  style:--opacity={settings?.widget_opacity ?? 0.85}
   style:height={onTaskbar && taskbarH ? `${Math.max(28, taskbarH - 10)}px` : undefined}
   {onpointerdown}
   {onpointermove}
@@ -357,16 +328,6 @@
         <Icon name="box" size={12} />
         <span class="val w-docker">{!docker ? "…" : docker.up ? `${docker.running}/${docker.total}` : "arrêté"}</span>
       </span>
-    {:else if id === "git" && git}
-      <span class="item click" data-act="git" data-tip="git">
-        <Icon name="branch" size={12} />
-        <span class="val w-git">{git.name} · {git.branch}</span>
-        <span class="w-gitstate">
-          {#if git.changes}<span class="dirty">●{git.changes}</span>{/if}
-          {#if git.ahead}<span class="ahead">↑{git.ahead}</span>{/if}
-          {#if !git.changes && !git.ahead}<span class="clean">✓</span>{/if}
-        </span>
-      </span>
     {:else if id === "media"}
       <span class="item media" class:paused={!media?.playing} class:empty={!media}>
         <span class="mopen" data-act="media-open" data-tip="media">
@@ -403,10 +364,17 @@
 </div>
 
 <style>
+  /* La barre remplit la fenêtre ; ses coins arrondis sont dessinés par Windows. */
   :global(html),
   :global(body) {
-    background: transparent;
+    background: rgb(32, 32, 32);
     overflow: hidden;
+  }
+  @media (prefers-color-scheme: light) {
+    :global(html),
+    :global(body) {
+      background: rgb(249, 249, 249);
+    }
   }
   .bar {
     --bg: 32, 32, 32;
@@ -417,9 +385,7 @@
     gap: 2px;
     padding: 0 6px;
     height: 34px;
-    border-radius: 9px;
-    background: rgba(var(--bg), var(--opacity));
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgb(var(--bg));
     color: var(--fg);
     font-size: 12px;
     line-height: 1;
@@ -432,14 +398,10 @@
       --bg: 249, 249, 249;
       --fg: #1a1a1a;
       --dim: rgba(0, 0, 0, 0.5);
-      border-color: rgba(0, 0, 0, 0.08);
     }
   }
   .bar.draggable {
     cursor: grab;
-  }
-  .bar.taskbar {
-    border-radius: 6px;
   }
   .bar.vertical {
     flex-direction: column;
@@ -522,9 +484,7 @@
   .w-time,
   .w-date,
   .w-ports,
-  .w-docker,
-  .w-git,
-  .w-gitstate {
+  .w-docker {
     display: inline-block;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -552,28 +512,9 @@
   .w-docker {
     width: 6ch;
   }
-  .w-git {
-    width: 18ch;
-  }
-  .w-gitstate {
-    width: 7ch;
-  }
-  .vertical .w-ports,
-  .vertical .w-git {
+  .vertical .w-ports {
     width: auto;
     max-width: 22ch;
-  }
-  .clean {
-    color: #4caf50;
-    font-weight: 700;
-  }
-  .dirty {
-    color: #f5a623;
-    font-weight: 700;
-  }
-  .ahead {
-    color: #3a9bf0;
-    font-weight: 700;
   }
   /* Éléments cliquables : léger survol, sans rien déplacer. */
   .click {
