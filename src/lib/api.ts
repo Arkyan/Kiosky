@@ -7,6 +7,7 @@ export type PresetRule = { key: string; volume: number; muted: boolean };
 export type VolumePreset = { name: string; rules: PresetRule[] };
 export type Settings = {
   palette_shortcut: string;
+  mic_shortcut: string;
   expander_enabled: boolean;
   snippets: Snippet[];
   presets: VolumePreset[];
@@ -123,7 +124,11 @@ export type AudioApp = {
   volume: number;
   muted: boolean;
   active: boolean;
+  output: string | null;
 };
+export type AudioDevice = { id: string; name: string; default: boolean };
+export type Mic = { name: string; muted: boolean; volume: number };
+export type AudioLevels = { master: number; mic: number; apps: [string, number][] };
 export type MixerState = { master: number; master_muted: boolean; apps: AudioApp[] };
 
 export type StartupItem = {
@@ -159,6 +164,13 @@ export const api = {
   setAppVolume: (key: string, volume: number) => invoke<void>("set_app_volume", { key, volume }),
   setAppMute: (key: string, muted: boolean) => invoke<void>("set_app_mute", { key, muted }),
   applyPreset: (name: string) => invoke<void>("apply_preset", { name }),
+  getAudioDevices: () => invoke<{ outputs: AudioDevice[]; inputs: AudioDevice[] }>("get_audio_devices"),
+  setAppOutput: (key: string, device: string) => invoke<void>("set_app_output", { key, device }),
+  getMic: () => invoke<Mic>("get_mic"),
+  setMicMute: (muted: boolean) => invoke<void>("set_mic_mute", { muted }),
+  setMicVolume: (volume: number) => invoke<void>("set_mic_volume", { volume }),
+  startMeters: () => invoke<void>("start_meters"),
+  stopMeters: () => invoke<void>("stop_meters"),
 
   getStartup: () => invoke<StartupReport>("get_startup"),
   setStartupEnabled: (id: string, enabled: boolean) =>

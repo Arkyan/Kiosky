@@ -129,6 +129,9 @@ fn shortcut_list(s: &Settings) -> Vec<(String, String)> {
     if s.module_on("color") {
         list.push((s.picker_shortcut.clone(), "la pipette".to_string()));
     }
+    if s.module_on("mixer") && !s.mic_shortcut.trim().is_empty() {
+        list.push((s.mic_shortcut.clone(), "le micro".to_string()));
+    }
     for f in s.folder_shortcuts.iter().filter(|_| s.module_on("folders")) {
         if !f.shortcut.trim().is_empty() {
             list.push((f.shortcut.clone(), format!("le dossier « {} »", f.name)));
@@ -161,6 +164,8 @@ fn on_shortcut(app: &AppHandle, shortcut: &Shortcut) {
     let is = |key: &str| key.parse::<Shortcut>().is_ok_and(|k| &k == shortcut);
     if s.module_on("color") && is(&s.picker_shortcut) {
         start_color_pick(app, false);
+    } else if s.module_on("mixer") && !s.mic_shortcut.is_empty() && is(&s.mic_shortcut) {
+        toggle_mic(app);
     } else if let Some(f) = s.folder_shortcuts.iter().find(|f| !f.shortcut.is_empty() && is(&f.shortcut)) {
         if let Err(e) = launcher::open_with(&f.open_with, &f.path) {
             eprintln!("Raccourci de dossier : {e}");
@@ -168,6 +173,17 @@ fn on_shortcut(app: &AppHandle, shortcut: &Shortcut) {
     } else if is(&s.palette_shortcut) {
         toggle_palette(app);
     }
+}
+
+/// Coupe ou rétablit le micro, et prévient les fenêtres (voyant de la barre flottante, page Volume).
+fn toggle_mic(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || match audio::toggle_mic() {
+        Ok(muted) => {
+            let _ = app.emit("mic-changed", muted);
+        }
+        Err(e) => eprintln!("Micro : {e}"),
+    });
 }
 
 /// Lance la pipette. Si `from_main`, la fenêtre principale est cachée pendant la sélection
@@ -614,6 +630,57 @@ async fn set_app_volume(key: String, volume: f32) -> Result<(), String> {
 #[tauri::command]
 async fn set_app_mute(key: String, muted: bool) -> Result<(), String> {
     blocking(move || audio::set_app_mute(&key, muted)).await
+}
+
+#[derive(serde::Serialize)]
+struct AudioDevices {
+    outputs: Vec<audio::Device>,
+    inputs: Vec<audio::Device>,
+}
+
+#[tauri::command]
+async fn get_audio_devices() -> Result<AudioDevices, String> {
+    blocking(|| Ok(AudioDevices { outputs: audio::devices(false)?, inputs: audio::devices(true)? })).await
+}
+
+#[tauri::command]
+async fn set_app_output(key: String, device: String) -> Result<(), String> {
+    blocking(move || audio::set_app_output(&key, &device)).await
+}
+
+#[tauri::command]
+async fn get_mic() -> Result<audio::Mic, String> {
+    blocking(audio::mic).await
+}
+
+#[tauri::command]
+async fn set_mic_mute(app: AppHandle, muted: bool) -> Result<(), String> {
+    blocking(move || audio::set_mic_mute(muted)).await?;
+    let _ = app.emit("mic-changed", muted);
+    Ok(())
+}
+
+#[tauri::command]
+async fn set_mic_volume(volume: f32) -> Result<(), String> {
+    blocking(move || audio::set_mic_volume(volume)).await
+}
+
+/// Vu-mètres de la page Volume : démarrés à l'ouverture de la page, arrêtés à sa fermeture
+/// (ou dès que la fenêtre principale n'existe plus).
+#[tauri::command]
+fn start_meters(app: AppHandle) {
+    audio::start_meters(move |levels| {
+        if app.get_webview_window("main").is_none() {
+            audio::stop_meters();
+            return;
+        }
+        let _ = app.emit_to("main", "audio-levels", levels);
+    });
+}
+
+#[tauri::command]
+fn stop_meters() {
+    audio::stop_meters();
 }
 
 #[tauri::command]
@@ -1140,6 +1207,13 @@ fn main() {
             set_app_volume,
             set_app_mute,
             apply_preset,
+            get_audio_devices,
+            set_app_output,
+            get_mic,
+            set_mic_mute,
+            set_mic_volume,
+            start_meters,
+            stop_meters,
             get_startup,
             set_startup_enabled,
             restart_as_admin,

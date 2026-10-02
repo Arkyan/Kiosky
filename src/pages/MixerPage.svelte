@@ -1,9 +1,42 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { listen } from "@tauri-apps/api/event";
   import Icon from "../lib/Icon.svelte";
   import PageHeader from "../lib/PageHeader.svelte";
-  import { api, type MixerState } from "../lib/api";
+  import ShortcutInput from "../lib/ShortcutInput.svelte";
+  import { api, type AudioDevice, type AudioLevels, type Mic, type MixerState } from "../lib/api";
   import { store, saveSettings } from "../lib/settings.svelte";
+
+  let outputs = $state<AudioDevice[]>([]);
+  let mic = $state<Mic | null>(null);
+  /** Niveaux affichés, avec une retombée douce (comme un vrai vu-mètre) */
+  let levels = $state<Record<string, number>>({});
+  let micLevel = $state(0);
+  let masterLevel = $state(0);
+
+  const fall = (prev: number, next: number) => Math.max(next, prev * 0.82);
+
+  async function loadDevices() {
+    try {
+      outputs = (await api.getAudioDevices()).outputs;
+    } catch {
+      outputs = [];
+    }
+  }
+
+  async function loadMic() {
+    mic = await api.getMic().catch(() => null);
+  }
+
+  async function setOutput(key: string, device: string) {
+    try {
+      await api.setAppOutput(key, device);
+      error = "";
+      refresh();
+    } catch (e) {
+      error = String(e);
+    }
+  }
 
   let mixer = $state<MixerState | null>(null);
   let error = $state("");
@@ -34,11 +67,37 @@
 
   onMount(() => {
     refresh();
+    loadDevices();
+    loadMic();
+    // Vu-mètres : mesurés seulement tant que la page est ouverte.
+    api.startMeters();
+    const uns = [
+      listen<AudioLevels>("audio-levels", (e) => {
+        const next: Record<string, number> = {};
+        for (const [key, v] of e.payload.apps) next[key] = fall(levels[key] ?? 0, v);
+        levels = next;
+        masterLevel = fall(masterLevel, e.payload.master);
+        micLevel = fall(micLevel, e.payload.mic);
+      }),
+      listen<boolean>("mic-changed", (e) => mic && (mic.muted = e.payload)),
+    ];
     const t = setInterval(() => {
-      if (!document.hidden) refresh();
+      if (document.hidden) return;
+      refresh();
+      loadMic();
     }, 1500);
-    return () => clearInterval(t);
+    // Un casque branché ou débranché : la liste des sorties change.
+    const td = setInterval(loadDevices, 5000);
+    return () => {
+      clearInterval(t);
+      clearInterval(td);
+      api.stopMeters();
+      uns.forEach((u) => u.then((f) => f()));
+    };
   });
+
+  /** Niveau (0..1) → largeur de la jauge, sur une échelle douce qui fait bouger les sons faibles */
+  const meter = (v: number) => `${Math.min(100, Math.sqrt(v) * 100)}%`;
 
   const pct = (v: number) => Math.round(v * 100);
 
@@ -153,8 +212,64 @@
           api.setMasterVolume(mixer.master);
         }}
       />
+      <div class="vu"><span style:width={meter(masterLevel)}></span></div>
     </div>
   </div>
+
+  <!-- Micro -->
+  {#if mic}
+    <div class="card master micro" class:off={mic.muted}>
+      <button
+        class="btn ghost icon big"
+        class:muted={mic.muted}
+        title={mic.muted ? "Rétablir le micro" : "Couper le micro"}
+        onclick={async () => {
+          if (!mic) return;
+          await api.setMicMute(!mic.muted);
+          mic.muted = !mic.muted;
+        }}
+      >
+        <Icon name={mic.muted ? "mic_off" : "mic"} size={22} />
+      </button>
+      <div class="grow">
+        <div class="label">
+          <span class="strong">Micro</span>
+          <span class="small muted name">{mic.name}</span>
+          <span class="pct">{mic.muted ? "Coupé" : pct(mic.volume)}</span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={pct(mic.volume)}
+          style:--p={`${pct(mic.volume)}%`}
+          class:dim={mic.muted}
+          oninput={(e) => {
+            if (!mic) return;
+            mic.volume = +e.currentTarget.value / 100;
+            api.setMicVolume(mic.volume);
+          }}
+        />
+        <div class="vu mic-vu" title="Niveau du micro (seulement quand une application l'utilise)">
+          <span style:width={mic.muted ? "0%" : meter(micLevel)}></span>
+        </div>
+      </div>
+      {#if store.s}
+        <div class="mic-key">
+          <span class="small muted">Raccourci</span>
+          <ShortcutInput
+            value={store.s.mic_shortcut}
+            clearable
+            onchange={(v) => {
+              if (!store.s) return;
+              store.s.mic_shortcut = v;
+              saveSettings(0);
+            }}
+          />
+        </div>
+      {/if}
+    </div>
+  {/if}
 
   <h2>Applications <span class="muted small">· {mixer.apps.length}</span></h2>
 
@@ -183,6 +298,22 @@
               api.setAppVolume(a.key, a.volume);
             }}
           />
+          <div class="vu"><span style:width={meter(levels[a.key] ?? 0)}></span></div>
+          {#if outputs.length > 1}
+            <label class="out small">
+              <Icon name="speaker" size={13} />
+              <select
+                value={a.output && outputs.some((o) => o.id === a.output) ? a.output : ""}
+                onchange={(e) => setOutput(a.key, e.currentTarget.value)}
+                title="Sortie de cette application"
+              >
+                <option value="">Sortie par défaut ({outputs.find((o) => o.default)?.name ?? "Windows"})</option>
+                {#each outputs.filter((o) => !o.default) as o (o.id)}
+                  <option value={o.id}>{o.name}</option>
+                {/each}
+              </select>
+            </label>
+          {/if}
         </div>
         <button
           class="btn ghost icon"
@@ -355,6 +486,64 @@
   }
   .btn.on {
     color: var(--bad);
+  }
+
+  /* Vu-mètres : une fine jauge sous chaque curseur */
+  .vu {
+    height: 3px;
+    margin: 2px 9px 0;
+    border-radius: 2px;
+    background: var(--stroke);
+    overflow: hidden;
+  }
+  .vu span {
+    display: block;
+    height: 100%;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--ok), #f5b301 75%, var(--bad));
+    background-size: 300px 100%;
+    transition: width 0.06s linear;
+  }
+  .micro {
+    margin-top: 8px;
+  }
+  .micro .btn.muted {
+    background: color-mix(in srgb, var(--bad) 15%, transparent);
+    color: var(--bad);
+  }
+  .micro .name {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+  .mic-vu span {
+    background: var(--accent);
+  }
+  .mic-key {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    flex: none;
+  }
+  .out {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 6px 9px 0;
+    color: var(--text-3);
+  }
+  .out select {
+    flex: 1;
+    min-width: 0;
+    height: 24px;
+    padding: 0 4px;
+    border: 1px solid var(--stroke);
+    border-radius: 6px;
+    background: var(--input);
+    font-size: 12px;
+    color: var(--text-2);
   }
 
   /* Petit égaliseur animé quand l'app joue du son */

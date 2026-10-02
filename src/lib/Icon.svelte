@@ -45,6 +45,9 @@
     prev: '<path d="M17.5 6.5v11L9.5 12zM6.5 6.5v11"/>',
     next: '<path d="M6.5 6.5v11l8-5.5zM17.5 6.5v11"/>',
     pause: '<path d="M8.5 6v12M15.5 6v12"/>',
+    mic: '<rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v2.5"/>',
+    mic_off: '<path d="M15 9.5v-3a3 3 0 0 0-5.8-1.1M9 9v2.5a3 3 0 0 0 4.6 2.5M5.5 11.5a6.5 6.5 0 0 0 10.4 5.2M18.5 11.5a6.5 6.5 0 0 1-.4 2.2M12 18v2.5M4 4l16 16"/>',
+    speaker: '<rect x="6" y="3" width="12" height="18" rx="2.5"/><circle cx="12" cy="14" r="3.2"/><path d="M12 7.2h.01"/>',
   };
 </script>
 

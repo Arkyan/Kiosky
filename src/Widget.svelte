@@ -19,6 +19,7 @@
   let docker = $state<{ running: number; total: number; up: boolean; names: string[] } | null>(null);
   let media = $state<Media | null>(null);
   let volume = $state<{ volume: number; muted: boolean } | null>(null);
+  let mic = $state<{ name: string; muted: boolean } | null>(null);
   let taskbarH = $state<number | null>(null);
   let bar: HTMLDivElement;
 
@@ -46,6 +47,7 @@
   async function refreshFast() {
     if (has("media")) media = await api.getMedia().catch(() => null);
     if (has("volume")) volume = await api.getVolume().catch(() => null);
+    if (has("mic")) mic = await api.getMic().catch(() => null);
   }
 
   async function refreshSlow() {
@@ -86,7 +88,7 @@
   }
 
   $effect(() => {
-    void [sample, battery, devPorts, docker, media, volume, items, vertical, onTaskbar];
+    void [sample, battery, devPorts, docker, media, volume, mic, items, vertical, onTaskbar];
     fit();
   });
 
@@ -102,6 +104,8 @@
       listen<Sample>("monitor-sample", (e) => (sample = e.payload)),
       listen<TopProcs>("monitor-top", (e) => (top = e.payload)),
       listen("widget-config", loadSettings),
+      // Raccourci du micro : le voyant change aussitôt, sans attendre le prochain relevé.
+      listen<boolean>("mic-changed", (e) => mic && (mic = { ...mic, muted: e.payload })),
       listen("settings-changed", loadSettings),
     ];
     return () => {
@@ -158,6 +162,10 @@
         await api.mediaControl(action.slice(6) as "toggle" | "next" | "prev").catch(() => {});
         setTimeout(refreshFast, 250);
         return;
+      case "mic":
+        if (!mic) return;
+        mic = { ...mic, muted: !mic.muted };
+        return api.setMicMute(mic.muted);
       case "volume":
         if (!volume) return;
         volume = { ...volume, muted: !volume.muted };
@@ -272,6 +280,10 @@
     media: media
       ? `${media.title}${media.artist ? `\n${media.artist}` : ""}\n\n${media.app}\t${media.playing ? "en lecture" : "en pause"}\n\nClic sur le titre : ouvrir ${media.app}`
       : "Aucune lecture en cours\n\nLance Spotify, YouTube, VLC…",
+    mic: mic
+      ? `Micro : ${mic.muted ? "coupé" : "actif"}\n${mic.name}\n\nClic : ${mic.muted ? "rétablir" : "couper"}` +
+        (settings?.mic_shortcut ? ` · Raccourci : ${settings.mic_shortcut.replace("Super", "Win")}` : "")
+      : "Aucun micro",
     volume: volume ? `Volume : ${volume.muted ? "coupé" : pct(volume.volume * 100)}\n\nMolette : régler · Clic : couper / rétablir` : "Volume",
   } as Record<string, string>);
 </script>
@@ -350,6 +362,11 @@
           </button>
           <button class="mbtn" data-act="media-next" disabled={!media} aria-label="Suivant"><Icon name="next" size={14} /></button>
         </span>
+      </span>
+    {:else if id === "mic"}
+      <span class="item click micro" class:muted={mic?.muted} data-act="mic" data-tip="mic">
+        <Icon name={mic?.muted ? "mic_off" : "mic"} size={13} />
+        <span class="val w-mic">{!mic ? "…" : mic.muted ? "coupé" : "actif"}</span>
       </span>
     {:else if id === "volume"}
       <span class="item click" class:muted={volume?.muted} data-act="volume" data-tip="volume">
@@ -489,6 +506,22 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* Micro coupé : voyant rouge bien visible */
+  .micro.muted {
+    background: rgba(232, 72, 60, 0.85);
+    color: #fff;
+  }
+  .micro.muted .val,
+  .micro.muted :global(svg) {
+    color: #fff;
+  }
+  .micro:not(.muted) :global(svg) {
+    color: #4caf50;
+  }
+  .w-mic {
+    display: inline-block;
+    width: 5ch;
   }
   .w-pct {
     width: 4.6ch; /* « 100 % » */

@@ -39,6 +39,8 @@ pub struct FolderShortcut {
 #[serde(default)]
 pub struct Settings {
     pub palette_shortcut: String,
+    /// Couper / rétablir le micro, partout (vide = aucun raccourci)
+    pub mic_shortcut: String,
     pub expander_enabled: bool,
     pub snippets: Vec<Snippet>,
     pub presets: Vec<VolumePreset>,
@@ -114,6 +116,7 @@ impl Default for Settings {
         let s = |t: &str, x: &str| Snippet { trigger: t.into(), text: x.into() };
         Self {
             palette_shortcut: "Ctrl+Shift+Space".into(),
+            mic_shortcut: "Ctrl+Alt+M".into(),
             expander_enabled: true,
             snippets: vec![
                 s(";date", "{date}"),
@@ -141,7 +144,7 @@ impl Default for Settings {
             palette_disabled: vec![],
             widget_enabled: false,
             widget_items: ["cpu", "ram", "net", "time"].iter().map(|s| s.to_string()).collect(),
-            widget_order: ["cpu", "ram", "net", "time", "date", "battery", "ports", "docker", "media", "volume"].iter().map(|s| s.to_string()).collect(),
+            widget_order: ["cpu", "ram", "net", "time", "date", "battery", "ports", "docker", "media", "volume", "mic"].iter().map(|s| s.to_string()).collect(),
             widget_mode: "taskbar-left".into(),
             widget_pos: None,
             widget_vertical: false,

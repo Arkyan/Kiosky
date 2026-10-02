@@ -18,6 +18,7 @@
     { id: "docker", label: "Conteneurs Docker", icon: "box" },
     { id: "media", label: "Musique en cours", icon: "volume" },
     { id: "volume", label: "Volume", icon: "volume" },
+    { id: "mic", label: "Micro (voyant)", icon: "mic" },
   ];
 
   // Ordre stable de tous les éléments : cocher ou décocher ne déplace rien, seules les flèches le font.
@@ -210,6 +211,7 @@
             {#if w.id === "battery"}<span class="small muted"> · masquée sur un PC fixe</span>{/if}
             {#if w.id === "media"}<span class="small muted"> · Spotify, YouTube, VLC… avec pochette et ⏮ ⏯ ⏭</span>{/if}
             {#if w.id === "volume"}<span class="small muted"> · molette pour régler</span>{/if}
+            {#if w.id === "mic"}<span class="small muted"> · rouge quand il est coupé, clic pour basculer</span>{/if}
           </span>
           <button class="mini" title="Plus à gauche" disabled={i === 0} onclick={() => moveWidgetItem(w.id, -1)}><Icon name="up_small" size={14} /></button>
           <button class="mini" title="Plus à droite" disabled={i === widgetOrder.length - 1} onclick={() => moveWidgetItem(w.id, 1)}><Icon name="down_small" size={14} /></button>
