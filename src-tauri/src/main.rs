@@ -31,14 +31,61 @@ use std::time::Duration;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::image::Image;
-use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, State, WindowEvent};
+use tauri::{
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, RunEvent, State, WebviewWindow, WebviewWindowBuilder,
+    WindowEvent,
+};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 // ───────────────────────────── Fenêtres ─────────────────────────────
+//
+// Aucune fenêtre n'est créée au lancement (« create: false » dans tauri.conf.json) : chacune naît
+// quand on en a besoin, forcément après l'initialisation (les réglages sont prêts), et la fenêtre
+// principale est détruite à la fermeture. Moins de moteurs web en mémoire.
+
+/// La fenêtre `label`, créée depuis sa configuration si elle n'existe pas encore.
+fn window(app: &AppHandle, label: &str) -> Option<WebviewWindow> {
+    if let Some(w) = app.get_webview_window(label) {
+        return Some(w);
+    }
+    let config = app.config().app.windows.iter().find(|w| w.label == label)?.clone();
+    let w = match WebviewWindowBuilder::from_config(app, &config).and_then(|b| b.build()) {
+        Ok(w) => w,
+        Err(e) => {
+            eprintln!("Fenêtre « {label} » : {e}");
+            return None;
+        }
+    };
+    let raw = w.hwnd().ok().map(|h| h.0 as isize);
+    match label {
+        // La loupe de la pipette laisse passer la souris.
+        "picker" => {
+            let _ = w.set_ignore_cursor_events(true);
+        }
+        // Barre flottante : apparition et disparition sans animation.
+        "widget" => {
+            if let Some(raw) = raw {
+                widget::disable_animations(raw);
+            }
+        }
+        // Infobulle : traversée par la souris, instantanée, toujours au-dessus de la barre.
+        "tip" => {
+            let _ = w.set_ignore_cursor_events(true);
+            if let Some(raw) = raw {
+                widget::disable_animations(raw);
+                if let Some(bar) = widget_raw(app) {
+                    widget::set_owner(raw, bar);
+                }
+            }
+        }
+        _ => {}
+    }
+    Some(w)
+}
 
 fn show_main(app: &AppHandle) {
-    if let Some(w) = app.get_webview_window("main") {
+    if let Some(w) = window(app, "main") {
         let _ = w.unminimize();
         let _ = w.show();
         let _ = w.set_focus();
@@ -46,7 +93,7 @@ fn show_main(app: &AppHandle) {
 }
 
 fn toggle_palette(app: &AppHandle) {
-    let Some(w) = app.get_webview_window("palette") else { return };
+    let Some(w) = window(app, "palette") else { return };
     if w.is_visible().unwrap_or(false) {
         let _ = w.hide();
     } else {
@@ -113,7 +160,7 @@ fn start_color_pick(app: &AppHandle, from_main: bool) {
     }
     let app = app.clone();
     std::thread::spawn(move || {
-        let Some(loupe) = app.get_webview_window("picker") else { return };
+        let Some(loupe) = window(&app, "picker") else { return };
         let main = app.get_webview_window("main");
         if from_main {
             if let Some(m) = &main {
@@ -170,6 +217,13 @@ fn widget_raw(app: &AppHandle) -> Option<isize> {
     app.get_webview_window("widget")?.hwnd().ok().map(|h| h.0 as isize)
 }
 
+/// Crée la barre flottante et son infobulle (dans cet ordre : l'infobulle s'y rattache).
+fn create_widget(app: &AppHandle) {
+    if window(app, "widget").is_some() {
+        window(app, "tip");
+    }
+}
+
 /// Afficher / masquer depuis le menu de l'icône.
 fn toggle_widget(app: &AppHandle) {
     let state = app.state::<AppState>();
@@ -185,14 +239,20 @@ fn toggle_widget(app: &AppHandle) {
 
 /// Montre ou cache la fenêtre selon les réglages, et met le menu de l'icône à jour.
 fn apply_widget(app: &AppHandle, s: &Settings) {
-    if let Some(w) = app.get_webview_window("widget") {
-        if s.widget_enabled {
-            // L'interface se redimensionne puis appelle fit_widget, qui l'affiche à la bonne place.
+    if s.widget_enabled {
+        // Déjà là : elle se redimensionne puis appelle fit_widget. Nouvelle : elle le fait au chargement.
+        if app.get_webview_window("widget").is_some() {
             let _ = app.emit_to("widget", "widget-config", ());
         } else {
-            widget::guard(None);
-            let _ = w.hide();
-            hide_tip(app.clone());
+            create_widget(app);
+        }
+    } else {
+        // Désactivée : on libère ses deux moteurs web plutôt que de les garder cachés.
+        widget::guard(None);
+        for label in ["tip", "widget"] {
+            if let Some(w) = app.get_webview_window(label) {
+                let _ = w.destroy();
+            }
         }
     }
     if let (Some(tray), Ok(menu)) = (app.tray_by_id("toolbox"), tray_menu(app, s)) {
@@ -341,7 +401,7 @@ async fn get_volume() -> Result<VolumeState, String> {
 /// Menu de l'icône : la pipette n'y figure que si son module est actif.
 fn tray_menu(app: &AppHandle, s: &Settings) -> tauri::Result<Menu<tauri::Wry>> {
     let menu = Menu::new(app)?;
-    menu.append(&MenuItem::with_id(app, "open", "Ouvrir Kiosk", true, None::<&str>)?)?;
+    menu.append(&MenuItem::with_id(app, "open", "Ouvrir Kiosky", true, None::<&str>)?)?;
     menu.append(&MenuItem::with_id(app, "palette", "Palette de recherche", true, None::<&str>)?)?;
     if s.module_on("color") {
         menu.append(&MenuItem::with_id(app, "picker", "Pipette de couleur", true, None::<&str>)?)?;
@@ -358,7 +418,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let menu = tray_menu(app, &settings)?;
 
     let mut tray = TrayIconBuilder::with_id("toolbox")
-        .tooltip("Kiosk")
+        .tooltip("Kiosky")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -420,7 +480,7 @@ fn save_settings(app: AppHandle, state: State<'_, AppState>, mut settings: Setti
     settings.shell_history = old.shell_history.clone();
     if let Some(tray) = app.tray_by_id("toolbox") {
         if old.tooltip_active() && !settings.tooltip_active() {
-            let _ = tray.set_tooltip(Some("Kiosk"));
+            let _ = tray.set_tooltip(Some("Kiosky"));
         }
         if old.gauge_active() && !settings.gauge_active() {
             let _ = tray.set_icon(app.default_window_icon().cloned());
@@ -905,13 +965,19 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
     result.map_err(|e| e.to_string())
 }
 
-/// Les réglages étaient dans %APPDATA%\com.bebou.toolbox (ancien identifiant) : au premier lancement,
-/// on les recopie dans le nouveau dossier. L'ancien reste en place, rien n'est supprimé.
+/// Anciens identifiants de l'application, du plus récent au plus ancien : au premier lancement,
+/// les réglages sont recopiés depuis le premier dossier trouvé. L'ancien reste en place.
+const OLD_IDENTIFIERS: &[&str] = &["com.kiosk.desktop", "com.bebou.toolbox"];
+
 fn migrate_old_config(new_dir: &std::path::Path) {
-    let Some(old_dir) = new_dir.parent().map(|p| p.join("com.bebou.toolbox")) else { return };
-    if new_dir.join("settings.json").exists() || !old_dir.join("settings.json").exists() {
+    if new_dir.join("settings.json").exists() {
         return;
     }
+    let Some(parent) = new_dir.parent() else { return };
+    let Some(old_dir) = OLD_IDENTIFIERS.iter().map(|id| parent.join(id)).find(|d| d.join("settings.json").exists())
+    else {
+        return;
+    };
     if std::fs::create_dir_all(new_dir).is_err() {
         return;
     }
@@ -923,8 +989,8 @@ fn migrate_old_config(new_dir: &std::path::Path) {
     }
 }
 
-/// L'application s'appelait « Toolbox » : son ancienne entrée de démarrage automatique pointerait
-/// vers un exe disparu. On ne retire que la nôtre (lancée avec --minimized), jamais celle d'un autre
+/// L'application s'est appelée « Toolbox » puis « Kiosk » : ces anciennes entrées de démarrage
+/// automatique pointeraient vers un exe disparu. On ne retire que la nôtre (lancée avec --minimized), jamais celle d'un autre
 /// logiciel du même nom (JetBrains Toolbox…).
 fn remove_old_autostart() {
     use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_WRITE};
@@ -933,10 +999,12 @@ fn remove_old_autostart() {
     else {
         return;
     };
-    if let Ok(cmd) = run.get_value::<String, _>("Toolbox") {
-        let lower = cmd.to_lowercase();
-        if lower.contains("toolbox.exe") && lower.contains("--minimized") {
-            let _ = run.delete_value("Toolbox");
+    for (name, exe) in [("Toolbox", "toolbox.exe"), ("Kiosk", "kiosk.exe")] {
+        if let Ok(cmd) = run.get_value::<String, _>(name) {
+            let lower = cmd.to_lowercase();
+            if lower.contains(exe) && lower.contains("--minimized") {
+                let _ = run.delete_value(name);
+            }
         }
     }
 }
@@ -980,23 +1048,6 @@ fn main() {
             search::refresh_apps(); // liste des applis prête avant la première recherche
             widget::start_guard();
 
-            // Barre flottante : apparition et disparition sans animation.
-            if let Some(raw) = widget_raw(app.handle()) {
-                widget::disable_animations(raw);
-                // Infobulle : traversée par la souris, instantanée, toujours au-dessus de la barre.
-                if let Some(tip) = app.get_webview_window("tip") {
-                    let _ = tip.set_ignore_cursor_events(true);
-                    if let Ok(h) = tip.hwnd() {
-                        widget::disable_animations(h.0 as isize);
-                        widget::set_owner(h.0 as isize, raw);
-                    }
-                }
-            }
-
-            // La loupe de la pipette laisse passer la souris.
-            if let Some(loupe) = app.get_webview_window("picker") {
-                let _ = loupe.set_ignore_cursor_events(true);
-            }
 
             let handle = app.handle().clone();
             monitor::start(move |sample, top| {
@@ -1021,14 +1072,19 @@ fn main() {
             });
 
             // Lancé au démarrage de Windows → reste discret dans la zone de notification.
+            // La fenêtre principale d'abord : créée après la barre, elle s'ouvrait réduite.
             if !std::env::args().any(|a| a == "--minimized") {
                 show_main(app.handle());
+            }
+            if initial.widget_enabled {
+                create_widget(app.handle());
             }
             Ok(())
         })
         .on_window_event(|window, event| match event {
-            // Fermer une fenêtre la cache seulement : l'app continue dans la zone de notification.
-            WindowEvent::CloseRequested { api, .. } => {
+            // Fermer la fenêtre principale la détruit (elle sera recréée à la prochaine ouverture) ;
+            // les autres sont seulement cachées. L'app continue dans la zone de notification.
+            WindowEvent::CloseRequested { api, .. } if window.label() != "main" => {
                 api.prevent_close();
                 let _ = window.hide();
             }
@@ -1114,6 +1170,13 @@ fn main() {
             get_autostart,
             set_autostart,
         ])
-        .run(tauri::generate_context!())
-        .expect("erreur au lancement de Kiosk");
+        .build(tauri::generate_context!())
+        .expect("erreur au lancement de Kiosky")
+        .run(|_app, event| {
+            // Plus aucune fenêtre ouverte : on reste dans la zone de notification. « Quitter » passe
+            // par app.exit(0), qui fournit un code de sortie et n'est donc pas bloqué ici.
+            if let RunEvent::ExitRequested { api, code: None, .. } = event {
+                api.prevent_exit();
+            }
+        });
 }

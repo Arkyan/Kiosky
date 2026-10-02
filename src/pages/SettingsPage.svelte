@@ -130,7 +130,7 @@
     <div class="ico"><Icon name="power" size={18} /></div>
     <div class="grow">
       <div class="strong">Lancer au démarrage de Windows</div>
-      <div class="small muted">Kiosk démarre discrètement dans la zone de notification.</div>
+      <div class="small muted">Kiosky démarre discrètement dans la zone de notification.</div>
     </div>
     <Toggle checked={autostart} label="Lancer au démarrage" onchange={setAutostart} />
   </div>
@@ -273,8 +273,8 @@
   <div class="row">
     <div class="ico logo"></div>
     <div class="grow">
-      <div class="strong">Kiosk 0.1.0</div>
-      <div class="small muted">Rust + Tauri 2 + Svelte 5 · Réglages dans <span class="mono">%APPDATA%\com.kiosk.desktop</span></div>
+      <div class="strong">Kiosky 0.1.0</div>
+      <div class="small muted">Rust + Tauri 2 + Svelte 5 · Réglages dans <span class="mono">%APPDATA%\com.kiosky.desktop</span></div>
     </div>
   </div>
   <div class="row">
@@ -288,9 +288,6 @@
 <style>
   .intro {
     margin: -6px 0 10px;
-  }
-  .intro2 {
-    margin: 8px 2px 0;
   }
   .seg-ctrl {
     display: flex;

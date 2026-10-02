@@ -1,5 +1,5 @@
 //! Recherche de la palette, façon menu Démarrer : applications, projets, dossiers,
-//! paramètres Windows, outils système, actions et pages de Kiosk.
+//! paramètres Windows, outils système, actions et pages de Kiosky.
 //! Les résultats sont des `ConvResult` avec une `action`, exécutée par `run_action`.
 
 use crate::converter::ConvResult;
@@ -27,7 +27,7 @@ struct Item {
     weight: i32,
     /// Source de la palette (désactivable dans les réglages) : « apps », « settings »…
     source: &'static str,
-    /// Module de Kiosk dont dépend l'élément (masqué si le module est désactivé)
+    /// Module de Kiosky dont dépend l'élément (masqué si le module est désactivé)
     module: Option<&'static str>,
 }
 
@@ -152,7 +152,7 @@ const SYSTEM: &[(&str, &str, &str, bool)] = &[
     ("recycle", "Corbeille", "corbeille poubelle trash", false),
 ];
 
-/// (page, nom, mots-clés) : pages de Kiosk.
+/// (page, nom, mots-clés) : pages de Kiosky.
 const PAGES: &[(&str, &str, &str)] = &[
     ("expander", "Expanseur de texte", "snippets raccourcis texte"),
     ("color", "Pipette (historique)", "couleur color"),
@@ -165,7 +165,7 @@ const PAGES: &[(&str, &str, &str)] = &[
     ("folders", "Dossiers", "raccourcis dossiers favoris"),
     ("env", "Variables d'environnement", "path env variables"),
     ("containers", "Conteneurs", "docker wsl ubuntu linux conteneurs"),
-    ("settings", "Réglages de Kiosk", "réglages préférences raccourci"),
+    ("settings", "Réglages de Kiosky", "réglages préférences raccourci"),
 ];
 
 fn fixed_items() -> Vec<Item> {
@@ -210,7 +210,7 @@ fn fixed_items() -> Vec<Item> {
         });
     }
     v.push(Item {
-        kind: "Kiosk",
+        kind: "Kiosky",
         title: "Prendre une couleur".into(),
         hint: "Pipette".into(),
         keywords: "pipette couleur color picker".into(),
@@ -222,7 +222,7 @@ fn fixed_items() -> Vec<Item> {
     });
     for (id, name, kw) in PAGES {
         v.push(Item {
-            kind: "Kiosk",
+            kind: "Kiosky",
             title: name.to_string(),
             hint: String::new(),
             keywords: kw.to_string(),

@@ -196,11 +196,11 @@ pub fn kill(pid: u32) -> Result<(), String> {
         return Err("Ce processus fait partie de Windows et ne peut pas être arrêté.".into());
     }
     if pid == std::process::id() {
-        return Err("C'est Kiosk lui-même : utilise plutôt Quitter dans la zone de notification.".into());
+        return Err("C'est Kiosky lui-même : utilise plutôt Quitter dans la zone de notification.".into());
     }
     unsafe {
         let handle = OpenProcess(PROCESS_TERMINATE, BOOL::from(false), pid).map_err(|_| {
-            "Accès refusé : ce processus appartient au système ou à un autre utilisateur (relance Kiosk en admin).".to_string()
+            "Accès refusé : ce processus appartient au système ou à un autre utilisateur (relance Kiosky en admin).".to_string()
         })?;
         let res = TerminateProcess(handle, 1);
         let _ = CloseHandle(handle);

@@ -356,7 +356,7 @@ fn http() -> &'static reqwest::Client {
     CLIENT.get_or_init(|| {
         reqwest::Client::builder()
             .timeout(Duration::from_secs(5))
-            .user_agent("Kiosk/0.1")
+            .user_agent("Kiosky/0.1")
             .build()
             .expect("client HTTP")
     })

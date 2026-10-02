@@ -178,7 +178,7 @@ pub fn delete(dir: &Path, machine: bool, name: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Annule la dernière modification faite par Kiosk. Renvoie ce qui a été restauré.
+/// Annule la dernière modification faite par Kiosky. Renvoie ce qui a été restauré.
 pub fn undo(dir: &Path) -> Result<String, String> {
     let mut list = load_backups(dir);
     let b = list.pop().ok_or("Rien à annuler")?;
@@ -193,7 +193,7 @@ pub fn undo(dir: &Path) -> Result<String, String> {
 
 /// Remplace les %VARIABLES% avec les valeurs du registre (utilisateur, puis système),
 /// puis celles du processus. Le registre d'abord : une variable créée après le lancement
-/// de Kiosk est quand même prise en compte.
+/// de Kiosky est quand même prise en compte.
 fn expand(value: &str, vars: &HashMap<String, String>) -> String {
     let mut out = String::new();
     let mut rest = value;

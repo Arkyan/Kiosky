@@ -77,7 +77,7 @@
           <circle cx="13" cy="17" r="1.6" fill="white" />
         </svg>
       </div>
-      <span>Kiosk</span>
+      <span>Kiosky</span>
     </div>
 
     <nav>

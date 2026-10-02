@@ -1,4 +1,4 @@
-//! Réglages persistants, stockés en JSON dans %APPDATA%\com.kiosk.desktop\settings.json
+//! Réglages persistants, stockés en JSON dans %APPDATA%\com.kiosky.desktop\settings.json
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -63,7 +63,7 @@ pub struct Settings {
     /// Dossiers où chercher les projets (tous les disques si vide)
     pub project_roots: Vec<String>,
     pub project_favorites: Vec<String>,
-    /// Dernière ouverture de chaque projet depuis Kiosk (chemin → secondes Unix)
+    /// Dernière ouverture de chaque projet depuis Kiosky (chemin → secondes Unix)
     pub project_opened: HashMap<String, u64>,
     /// Nombre d'ouvertures de chaque résultat de la palette (action → compteur)
     pub launch_counts: HashMap<String, u32>,
