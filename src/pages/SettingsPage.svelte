@@ -6,6 +6,10 @@
   import { api } from "../lib/api";
   import { store, saveSettings } from "../lib/settings.svelte";
   import { MODULES, PALETTE_SOURCES } from "../lib/modules";
+  import { getVersion } from "@tauri-apps/api/app";
+
+  let version = $state("");
+  getVersion().then((v) => (version = v));
 
   const WIDGET_ITEMS: { id: string; label: string; icon: string }[] = [
     { id: "cpu", label: "Processeur", icon: "activity" },
@@ -258,7 +262,7 @@
   <div class="row">
     <div class="ico logo"></div>
     <div class="grow">
-      <div class="strong">Kiosky 0.1.0</div>
+      <div class="strong">Kiosky {version}</div>
       <div class="small muted">Rust + Tauri 2 + Svelte 5 · Réglages dans <span class="mono">%APPDATA%\com.kiosky.desktop</span></div>
     </div>
   </div>
