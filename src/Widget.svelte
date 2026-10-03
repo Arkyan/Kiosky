@@ -264,7 +264,9 @@
     gpu:
       `Processeur graphique : ${sample?.gpu != null ? pct(sample.gpu) : "…"}` +
       (gpu ? `\n${gpu.name}` : "") +
-      (gpu?.mem_total && sample ? `\n\nMémoire vidéo\t${fmtBytes(sample.gpu_mem)} sur ${fmtBytes(gpu.mem_total)}` : "") +
+      (sample?.gpu_temp != null ? `\n\nTempérature\t${Math.round(sample.gpu_temp)} °C` : "") +
+      (gpu?.mem_total && sample ? `${sample.gpu_temp != null ? "\n" : "\n\n"}Mémoire vidéo\t${fmtBytes(sample.gpu_mem)} sur ${fmtBytes(gpu.mem_total)}` : "") +
+      (top?.gpu.length ? "\n\n" + top.gpu.slice(0, 3).map((g) => `${strip(g.name)}\t${pct(g.gpu)}`).join("\n") : "") +
       "\n\nClic : ouvrir le Moniteur",
     ram:
       `Mémoire : ${sample ? `${fmtBytes(sample.mem_used)} sur ${fmtBytes(sample.mem_total)} (${pct(memPct)})` : "…"}` +

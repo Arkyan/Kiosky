@@ -5,6 +5,7 @@
   import PageHeader from "../lib/PageHeader.svelte";
   import Toggle from "../lib/Toggle.svelte";
   import { api, fmtBytes, type Disk, type Gpu, type ProcGroup, type Sample, type TopProcs } from "../lib/api";
+  import { explainProcess } from "../lib/processes";
   import { store, saveSettings } from "../lib/settings.svelte";
 
   const HISTORY = 120; // 2 minutes, une mesure par seconde
@@ -12,7 +13,7 @@
   let history = $state<Sample[]>([]);
   let disks = $state<Disk[]>([]);
   let gpu = $state<Gpu | null>(null);
-  let top = $state<TopProcs>({ cpu: [], mem: [] });
+  let top = $state<TopProcs>({ cpu: [], mem: [], gpu: [] });
   let confirmKey = $state<string | null>(null);
   let killError = $state("");
   let confirmTimer: ReturnType<typeof setTimeout> | undefined;
@@ -64,6 +65,15 @@
   const upCurve = $derived(area(history.map((s) => s.net_up), netMax));
 
   const pct = (v: number) => Math.round(v).toLocaleString("fr-FR") + " %";
+  const degrees = (v: number) => Math.round(v).toLocaleString("fr-FR") + " °C";
+  /** Température de la carte graphique : orange dès 80 °C, rouge dès 90 °C */
+  const heat = (v: number) => (v >= 90 ? "bad" : v >= 80 ? "warn" : "");
+
+  const columns = $derived([
+    { id: "cpu", label: "Processeur", list: top.cpu, empty: "Mesure en cours…" },
+    ...(gpu ? [{ id: "gpu", label: "Processeur graphique", list: top.gpu, empty: "Aucun processus ne l'utilise" }] : []),
+    { id: "mem", label: "Mémoire", list: top.mem, empty: "Mesure en cours…" },
+  ]);
   const level = (v: number) => (v >= 90 ? "bad" : v >= 70 ? "warn" : "");
 
   function setTooltip(v: boolean) {
@@ -116,7 +126,10 @@
     <div class="card metric {level(last?.gpu ?? 0)}">
       <div class="head">
         <span class="label">Processeur graphique</span>
-        <span class="value">{last?.gpu != null ? pct(last.gpu) : "…"}</span>
+        <span class="value">
+          {#if last?.gpu_temp != null}<span class="temp {heat(last.gpu_temp)}">{degrees(last.gpu_temp)}</span>{/if}
+          {last?.gpu != null ? pct(last.gpu) : "…"}
+        </span>
       </div>
       <svg viewBox="0 0 {W} {H}" preserveAspectRatio="none">
         <path class="fill" d={gpuCurve.fill} />
@@ -162,19 +175,21 @@
   <div class="banner error kill-error">{killError}</div>
 {/if}
 <div class="procs">
-  {#each [{ id: "cpu", label: "Processeur", list: top.cpu }, { id: "mem", label: "Mémoire", list: top.mem }] as col (col.id)}
+  {#each columns as col (col.id)}
     <div class="card plist">
       <div class="phead small">{col.label}</div>
       {#each col.list as g (g.name)}
         {@const key = `${col.id}|${g.name}`}
+        {@const about = explainProcess(g.name)}
         <div class="prow">
           <div class="pinfo">
             <span class="pname" title={g.name}>{pretty(g.name)}</span>
             {#if g.pids.length > 1}<span class="pcount small">×{g.pids.length}</span>{/if}
+            {#if about}<span class="pabout" title={about}><Icon name="info" size={14} /></span>{/if}
           </div>
-          <span class="pval">{col.id === "cpu" ? pct(g.cpu) : fmtBytes(g.mem)}</span>
+          <span class="pval">{col.id === "mem" ? fmtBytes(g.mem) : pct(col.id === "gpu" ? g.gpu : g.cpu)}</span>
           {#if g.system}
-            <span class="pwin small" title="Processus de Windows">Windows</span>
+            <span class="pwin" title="Processus de Windows : il ne peut pas être arrêté d'ici"><Icon name="shield" size={13} /></span>
           {:else}
             <button
               class="btn ghost pkill"
@@ -183,12 +198,12 @@
               onclick={() => kill(col.id, g)}
             >
               <Icon name="stop" size={12} />
-              {confirmKey === key ? "Confirmer" : "Arrêter"}
+              {#if confirmKey === key}Confirmer{/if}
             </button>
           {/if}
         </div>
       {:else}
-        <div class="pempty small muted">Mesure en cours…</div>
+        <div class="pempty small muted">{col.empty}</div>
       {/each}
     </div>
   {/each}
@@ -268,7 +283,18 @@
     line-height: 1.1;
     font-variant-numeric: tabular-nums;
   }
-  svg {
+  .temp {
+    margin-right: 8px;
+    font-size: 14px;
+    color: var(--text-2);
+  }
+  .temp.warn {
+    color: var(--warn);
+  }
+  .temp.bad {
+    color: var(--bad);
+  }
+  .metric svg {
     width: 100%;
     height: 72px;
     display: block;
@@ -391,7 +417,7 @@
   }
   .procs {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
     gap: 8px;
   }
   .kill-error {
@@ -433,20 +459,33 @@
     flex: none;
     color: var(--text-3);
   }
+  .pabout {
+    flex: none;
+    align-self: center;
+    display: grid;
+    color: var(--text-3);
+    cursor: help;
+  }
+  .pabout:hover {
+    color: var(--accent);
+  }
   .pval {
-    min-width: 64px;
+    flex: none;
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
   .pwin {
-    width: 92px;
-    text-align: center;
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 28px;
     color: var(--text-3);
   }
   .pkill {
-    width: 92px;
+    flex: none;
+    min-width: 28px;
     height: 28px;
-    padding: 0 8px;
+    padding: 0 7px;
     gap: 5px;
     font-size: 12px;
     color: var(--text-2);

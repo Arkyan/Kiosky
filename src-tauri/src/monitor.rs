@@ -34,6 +34,8 @@ pub struct Sample {
     pub gpu: Option<f32>,
     /// Mémoire vidéo dédiée utilisée (octets)
     pub gpu_mem: u64,
+    /// Température de la carte graphique en °C (absente si le pilote ne la donne pas)
+    pub gpu_temp: Option<f32>,
 }
 
 #[derive(Serialize, Clone)]
@@ -51,6 +53,9 @@ pub struct Gpu {
     /// « luid_0x00000000_0x0000d3a5 », tel qu'il apparaît dans le nom des compteurs
     #[serde(skip)]
     luid: String,
+    /// Le même identifiant sous sa forme d'origine (partie basse, partie haute)
+    #[serde(skip)]
+    luid_raw: (u32, i32),
 }
 
 #[derive(Serialize)]
@@ -146,7 +151,7 @@ pub fn state() -> MonitorState {
 pub fn start(on_sample: impl Fn(&Sample, &TopProcs) + Send + 'static) {
     std::thread::spawn(move || {
         let mut tracker = ProcTracker::new();
-        let gpu_counters = gpu().and_then(|g| GpuCounters::open(g.luid));
+        let gpu_counters = gpu().and_then(|g| GpuCounters::open(&g));
         let mut last_cpu = cpu_times();
         let mut last_net = net_octets();
         let mut last_at = Instant::now();
@@ -172,11 +177,9 @@ pub fn start(on_sample: impl Fn(&Sample, &TopProcs) + Send + 'static) {
             last_net = net;
 
             let (mem_used, mem_total) = memory();
-            let (gpu, gpu_mem) = match gpu_counters.as_ref().map(|c| c.sample()) {
-                Some((usage, mem)) => (Some(usage), mem),
-                None => (None, 0),
-            };
-            let sample = Sample { cpu, mem_used, mem_total, net_down, net_up, gpu, gpu_mem };
+            let g = gpu_counters.as_ref().map(|c| c.sample()).unwrap_or_default();
+            let sample =
+                Sample { cpu, mem_used, mem_total, net_down, net_up, gpu: g.usage, gpu_mem: g.mem, gpu_temp: g.temp };
             {
                 let mut h = history().lock().unwrap();
                 if h.len() == HISTORY {
@@ -184,7 +187,7 @@ pub fn start(on_sample: impl Fn(&Sample, &TopProcs) + Send + 'static) {
                 }
                 h.push_back(sample.clone());
             }
-            let top = tracker.sample(secs);
+            let top = tracker.sample(secs, &g.by_pid);
             *top_store().lock().unwrap() = top.clone();
             on_sample(&sample, &top);
         }
@@ -241,6 +244,7 @@ pub fn gpu() -> Option<Gpu> {
                 name: String::from_utf16_lossy(&d.Description[..len]).trim().to_string(),
                 mem_total,
                 luid: format!("luid_0x{:08x}_0x{:08x}", d.AdapterLuid.HighPart, d.AdapterLuid.LowPart),
+                luid_raw: (d.AdapterLuid.LowPart, d.AdapterLuid.HighPart),
             });
         }
         best
@@ -250,6 +254,61 @@ pub fn gpu() -> Option<Gpu> {
 
 const PDH_MORE_DATA: u32 = 0x800007D2;
 
+// Température : la requête du Gestionnaire des tâches, adressée au pilote par le noyau graphique.
+// Ces fonctions de gdi32 ne sont pas dans le crate `windows` : on les déclare.
+#[repr(C)]
+struct KmtOpenAdapter {
+    luid_low: u32,
+    luid_high: i32,
+    handle: u32,
+}
+
+#[repr(C)]
+struct KmtQueryAdapterInfo {
+    handle: u32,
+    kind: u32,
+    data: *mut core::ffi::c_void,
+    size: u32,
+}
+
+/// D3DKMT_ADAPTER_PERFDATA
+#[repr(C)]
+#[derive(Default)]
+struct KmtPerfData {
+    physical_adapter: u32,
+    memory_frequency: u64,
+    max_memory_frequency: u64,
+    max_memory_frequency_oc: u64,
+    memory_bandwidth: u64,
+    pcie_bandwidth: u64,
+    fan_rpm: u32,
+    /// Dixièmes de pour cent
+    power: u32,
+    /// Dixièmes de degré Celsius
+    temperature: u32,
+    power_state_override: u8,
+}
+
+const KMTQAITYPE_ADAPTERPERFDATA: u32 = 62;
+
+#[link(name = "gdi32")]
+extern "system" {
+    fn D3DKMTOpenAdapterFromLuid(args: *mut KmtOpenAdapter) -> i32;
+    fn D3DKMTQueryAdapterInfo(args: *mut KmtQueryAdapterInfo) -> i32;
+}
+
+/// Un relevé de la carte graphique.
+#[derive(Default)]
+struct GpuSample {
+    /// 0 à 100
+    usage: Option<f32>,
+    /// Mémoire dédiée utilisée (octets)
+    mem: u64,
+    temp: Option<f32>,
+    /// Utilisation par processus, 0 à 100
+    by_pid: HashMap<u32, f32>,
+}
+
 /// Compteurs de performance de Windows, les mêmes que ceux du Gestionnaire des tâches :
 /// ils fonctionnent avec toutes les marques de cartes.
 struct GpuCounters {
@@ -257,10 +316,12 @@ struct GpuCounters {
     engine: isize,
     memory: isize,
     luid: String,
+    /// Carte ouverte auprès du noyau graphique (0 : refusé, pas de température)
+    adapter: u32,
 }
 
 impl GpuCounters {
-    fn open(luid: String) -> Option<Self> {
+    fn open(gpu: &Gpu) -> Option<Self> {
         unsafe {
             let mut query = 0isize;
             if PdhOpenQueryW(PCWSTR::null(), 0, &mut query) != 0 {
@@ -278,7 +339,9 @@ impl GpuCounters {
             let memory = add(r"\GPU Adapter Memory(*)\Dedicated Usage").unwrap_or(0);
             // Un pourcentage se calcule entre deux relevés : celui-ci sert de point de départ.
             PdhCollectQueryData(query);
-            Some(Self { query, engine, memory, luid })
+            let mut kmt = KmtOpenAdapter { luid_low: gpu.luid_raw.0, luid_high: gpu.luid_raw.1, handle: 0 };
+            let adapter = if D3DKMTOpenAdapterFromLuid(&mut kmt) == 0 { kmt.handle } else { 0 };
+            Some(Self { query, engine, memory, luid: gpu.luid.clone(), adapter })
         }
     }
 
@@ -307,20 +370,41 @@ impl GpuCounters {
         }
     }
 
-    /// (utilisation de 0 à 100, mémoire dédiée utilisée en octets)
-    fn sample(&self) -> (f32, u64) {
+    fn temperature(&self) -> Option<f32> {
+        if self.adapter == 0 {
+            return None;
+        }
+        let mut data = KmtPerfData::default();
+        let mut query = KmtQueryAdapterInfo {
+            handle: self.adapter,
+            kind: KMTQAITYPE_ADAPTERPERFDATA,
+            data: (&mut data as *mut KmtPerfData).cast(),
+            size: std::mem::size_of::<KmtPerfData>() as u32,
+        };
+        // 0 : le pilote ne donne pas la température (puces intégrées, machines virtuelles).
+        (unsafe { D3DKMTQueryAdapterInfo(&mut query) } == 0 && data.temperature > 0)
+            .then(|| data.temperature as f32 / 10.0)
+    }
+
+    fn sample(&self) -> GpuSample {
         unsafe { PdhCollectQueryData(self.query) };
-        // Une instance par processus et par moteur (« pid_1234_luid_…_phys_0_eng_0_engtype_3d ») :
-        // on additionne les processus de chaque moteur, puis on garde le moteur le plus chargé.
+        // Une instance par processus et par moteur (« pid_1234_luid_…_phys_0_eng_0_engtype_3d »).
+        // Carte : on additionne les processus de chaque moteur, puis on garde le moteur le plus chargé.
+        // Processus : son moteur le plus chargé. C'est le calcul du Gestionnaire des tâches.
         let mut engines: HashMap<String, f64> = HashMap::new();
+        let mut by_pid: HashMap<u32, f32> = HashMap::new();
         for (name, value) in Self::values(self.engine) {
-            if let Some(at) = name.find(&self.luid) {
-                *engines.entry(name[at..].to_string()).or_default() += value;
+            let Some(at) = name.find(&self.luid) else { continue };
+            *engines.entry(name[at..].to_string()).or_default() += value;
+            let pid = name.strip_prefix("pid_").and_then(|n| n.split('_').next()).and_then(|p| p.parse().ok());
+            if let Some(pid) = pid {
+                let v = by_pid.entry(pid).or_default();
+                *v = v.max(value as f32);
             }
         }
         let usage = engines.values().fold(0.0f64, |a, &b| a.max(b)).clamp(0.0, 100.0);
         let mem: f64 = Self::values(self.memory).iter().filter(|(n, _)| n.contains(&self.luid)).map(|(_, v)| v).sum();
-        (usage as f32, mem.max(0.0) as u64)
+        GpuSample { usage: Some(usage as f32), mem: mem.max(0.0) as u64, temp: self.temperature(), by_pid }
     }
 }
 
@@ -335,6 +419,8 @@ pub struct ProcGroup {
     pub cpu: f32,
     /// Mémoire privée (octets), la valeur affichée par défaut dans le Gestionnaire des tâches
     pub mem: u64,
+    /// Part du processeur graphique, 0 à 100
+    pub gpu: f32,
     pub system: bool,
 }
 
@@ -342,6 +428,8 @@ pub struct ProcGroup {
 pub struct TopProcs {
     pub cpu: Vec<ProcGroup>,
     pub mem: Vec<ProcGroup>,
+    /// Vide sans carte graphique, ou quand aucun processus ne s'en sert
+    pub gpu: Vec<ProcGroup>,
 }
 
 /// Début de SYSTEM_PROCESS_INFORMATION (x64). La structure du crate `windows`
@@ -448,11 +536,11 @@ impl ProcTracker {
     fn new() -> Self {
         let cpus = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1) as f64;
         let mut t = Self { last: HashMap::new(), system: HashMap::new(), cpus };
-        t.sample(1.0);
+        t.sample(1.0, &HashMap::new());
         t
     }
 
-    fn sample(&mut self, secs: f64) -> TopProcs {
+    fn sample(&mut self, secs: f64, gpu: &HashMap<u32, f32>) -> TopProcs {
         let procs = processes();
         let mut groups: HashMap<String, ProcGroup> = HashMap::new();
         let mut next = HashMap::with_capacity(procs.len());
@@ -477,11 +565,13 @@ impl ProcTracker {
                 pids: Vec::new(),
                 cpu: 0.0,
                 mem: 0,
+                gpu: 0.0,
                 system,
             });
             g.pids.push(p.pid);
             g.cpu += cpu;
             g.mem += p.mem;
+            g.gpu += gpu.get(&p.pid).copied().unwrap_or(0.0);
             g.system &= system;
         }
         self.system.retain(|k, _| next.contains_key(&k.0));
@@ -490,12 +580,16 @@ impl ProcTracker {
         let mut all: Vec<ProcGroup> = groups.into_values().collect();
         for g in &mut all {
             g.cpu = g.cpu.min(100.0);
+            g.gpu = g.gpu.min(100.0);
         }
         all.sort_by(|a, b| b.cpu.total_cmp(&a.cpu));
         let cpu = all.iter().take(5).cloned().collect();
         all.sort_by(|a, b| b.mem.cmp(&a.mem));
         let mem = all.iter().take(5).cloned().collect();
-        TopProcs { cpu, mem }
+        all.sort_by(|a, b| b.gpu.total_cmp(&a.gpu));
+        // Sous 0,5 %, la ligne afficherait « 0 % ».
+        let gpu = all.iter().take(5).filter(|g| g.gpu >= 0.5).cloned().collect();
+        TopProcs { cpu, mem, gpu }
     }
 }
 
