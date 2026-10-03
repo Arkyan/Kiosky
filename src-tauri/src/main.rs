@@ -1054,6 +1054,73 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
     result.map_err(|e| e.to_string())
 }
 
+// ───────────────────────────── Mises à jour ─────────────────────────────
+
+#[derive(serde::Serialize, Clone)]
+struct UpdateInfo {
+    version: String,
+    notes: String,
+}
+
+/// Dernière version trouvée et pas encore installée : la fenêtre principale la lit à son ouverture.
+static PENDING_UPDATE: Mutex<Option<UpdateInfo>> = Mutex::new(None);
+
+async fn find_update(app: &AppHandle) -> Result<Option<tauri_plugin_updater::Update>, String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    updater.check().await.map_err(|e| format!("Impossible de chercher une mise à jour : {e}"))
+}
+
+#[tauri::command]
+async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
+    let info = find_update(&app)
+        .await?
+        .map(|u| UpdateInfo { version: u.version.clone(), notes: u.body.clone().unwrap_or_default() });
+    *PENDING_UPDATE.lock().unwrap() = info.clone();
+    let _ = app.emit_to("main", "update-available", &info);
+    Ok(info)
+}
+
+#[tauri::command]
+fn pending_update() -> Option<UpdateInfo> {
+    PENDING_UPDATE.lock().unwrap().clone()
+}
+
+/// Télécharge la nouvelle version, vérifie sa signature et lance son installateur,
+/// qui ferme Kiosky puis le relance.
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<(), String> {
+    let update = find_update(&app).await?.ok_or("Kiosky est déjà à jour.")?;
+    let mut done = 0u64;
+    let handle = app.clone();
+    update
+        .download_and_install(
+            move |chunk, total| {
+                done += chunk as u64;
+                let _ = handle.emit_to("main", "update-progress", serde_json::json!({ "done": done, "total": total }));
+            },
+            || {},
+        )
+        .await
+        .map_err(|e| format!("La mise à jour a échoué : {e}"))?;
+    app.restart()
+}
+
+/// Recherche en arrière-plan : peu après le lancement, puis toutes les six heures
+/// (Kiosky reste ouvert des jours dans la zone de notification).
+fn watch_updates(app: AppHandle) {
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(20));
+        loop {
+            let enabled = app.state::<AppState>().settings.lock().unwrap().update_check;
+            if enabled {
+                let _ = tauri::async_runtime::block_on(check_update(app.clone()));
+            }
+            std::thread::sleep(Duration::from_secs(6 * 3600));
+        }
+    });
+}
+
 /// Anciens identifiants de l'application, du plus récent au plus ancien : au premier lancement,
 /// les réglages sont recopiés depuis le premier dossier trouvé. L'ancien reste en place.
 const OLD_IDENTIFIERS: &[&str] = &["com.kiosk.desktop", "com.bebou.toolbox"];
@@ -1117,6 +1184,7 @@ fn main() {
                 })
                 .build(),
         )
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
             migrate_old_config(&dir);
@@ -1136,7 +1204,10 @@ fn main() {
             build_tray(app.handle())?;
             search::refresh_apps(); // liste des applis prête avant la première recherche
             widget::start_guard();
-
+            // En développement, la version locale n'a pas à être remplacée par la dernière publiée.
+            if !cfg!(debug_assertions) {
+                watch_updates(app.handle().clone());
+            }
 
             let handle = app.handle().clone();
             monitor::start(move |sample, top| {
@@ -1276,6 +1347,9 @@ fn main() {
             get_volume,
             get_autostart,
             set_autostart,
+            check_update,
+            pending_update,
+            install_update,
         ])
         .build(tauri::generate_context!())
         .expect("erreur au lancement de Kiosky")

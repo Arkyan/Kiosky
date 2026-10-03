@@ -30,6 +30,7 @@ export type Settings = {
   widget_pos: [number, number] | null;
   widget_vertical: boolean;
   widget_opacity: number;
+  update_check: boolean;
   project_roots: string[];
   project_favorites: string[];
   project_opened: Record<string, number>;
@@ -237,6 +238,10 @@ export const api = {
 
   getAutostart: () => invoke<boolean>("get_autostart"),
   setAutostart: (enabled: boolean) => invoke<void>("set_autostart", { enabled }),
+
+  checkUpdate: () => invoke<UpdateInfo | null>("check_update"),
+  pendingUpdate: () => invoke<UpdateInfo | null>("pending_update"),
+  installUpdate: () => invoke<void>("install_update"),
 };
 
 /** Copie dans le presse-papiers, avec repli si l'API moderne est refusée. */

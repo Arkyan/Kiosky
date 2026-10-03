@@ -99,8 +99,17 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNCMDRDRUJCRjFEQzY0QTAKUldTZ1pOenh1ODRFTzE5S0dLK2Y1RVJHWGxyNFk3WitITFI1VEttY2tZWGxQQ2ltcHNTdUExY0kK",
+      "endpoints": [
+        "https://github.com/Arkyan/Kiosky/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": [
       "nsis",
       "msi"

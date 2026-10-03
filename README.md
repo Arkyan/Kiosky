@@ -46,6 +46,22 @@ npm run tauri build
 
 L'exe et les installateurs (`.msi`, `-setup.exe`) sont dans `src-tauri/target/release/bundle/`.
 
+## Publier une version
+
+Kiosky se met à jour tout seul (Réglages → Mises à jour) : il lit `latest.json` dans la dernière
+release GitHub, télécharge l'installateur et vérifie sa signature.
+
+1. Change la version dans `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` et `package.json`.
+2. Lance le script, qui construit, signe et publie la release `v<version>` :
+
+```powershell
+.\scripts\release.ps1 -Publish -Notes "Ce qui change"
+```
+
+La clé privée de signature est dans `%USERPROFILE%\.tauri\kiosky.key`, hors du dépôt. Garde-en une copie :
+sans elle, les versions déjà installées refuseront toutes les mises à jour suivantes.
+Le dépôt (ou au moins ses releases) doit être public pour que l'application puisse les télécharger.
+
 ## Organisation
 
 ```
@@ -56,6 +72,7 @@ src/                     Interface Svelte
   Picker.svelte          Loupe de la pipette
   Widget.svelte          Barre flottante
   Tip.svelte             Infobulle de la barre flottante
+scripts/release.ps1      Construction signée, latest.json et release GitHub
 src-tauri/src/
   main.rs                Fenêtres, zone de notification, raccourci, commandes
   search.rs              Recherche de la palette (Get-StartApps, score, usage)

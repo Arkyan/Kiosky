@@ -87,6 +87,8 @@ pub struct Settings {
     pub widget_vertical: bool,
     /// Opacité du fond, de 0.3 à 1
     pub widget_opacity: f32,
+    /// Cherche une nouvelle version au lancement, puis de temps en temps
+    pub update_check: bool,
 }
 
 impl Settings {
@@ -149,6 +151,7 @@ impl Default for Settings {
             widget_pos: None,
             widget_vertical: false,
             widget_opacity: 0.85,
+            update_check: true,
         }
     }
 }

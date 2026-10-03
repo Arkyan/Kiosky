@@ -3,7 +3,8 @@
   import Icon from "../lib/Icon.svelte";
   import PageHeader from "../lib/PageHeader.svelte";
   import Toggle from "../lib/Toggle.svelte";
-  import { api } from "../lib/api";
+  import { listen } from "@tauri-apps/api/event";
+  import { api, fmtBytes, type UpdateInfo } from "../lib/api";
   import { store, saveSettings } from "../lib/settings.svelte";
   import { MODULES, PALETTE_SOURCES } from "../lib/modules";
   import { getVersion } from "@tauri-apps/api/app";
@@ -13,8 +14,8 @@
 
   const WIDGET_ITEMS: { id: string; label: string; icon: string }[] = [
     { id: "cpu", label: "Processeur", icon: "activity" },
-    { id: "ram", label: "Mémoire", icon: "activity" },
     { id: "gpu", label: "Processeur graphique", icon: "activity" },
+    { id: "ram", label: "Mémoire", icon: "activity" },
     { id: "net", label: "Réseau ↓↑", icon: "globe" },
     { id: "time", label: "Heure", icon: "clock" },
     { id: "date", label: "Date", icon: "clock" },
@@ -62,8 +63,47 @@
   let recording = $state<ShortcutField | null>(null);
   let preview = $state("");
 
-  onMount(async () => {
-    autostart = await api.getAutostart();
+  // ─── Mises à jour ───
+
+  let update = $state<UpdateInfo | null>(null);
+  /** "" (rien fait), "checking", "none" (à jour), "installing" */
+  let updateStatus = $state<"" | "checking" | "none" | "installing">("");
+  let updateError = $state("");
+  let progress = $state<{ done: number; total: number | null } | null>(null);
+
+  async function checkUpdate() {
+    updateStatus = "checking";
+    updateError = "";
+    try {
+      update = await api.checkUpdate();
+      updateStatus = update ? "" : "none";
+    } catch (e) {
+      updateError = String(e);
+      updateStatus = "";
+    }
+  }
+
+  async function installUpdate() {
+    updateStatus = "installing";
+    updateError = "";
+    progress = null;
+    try {
+      await api.installUpdate(); // l'installateur ferme puis relance Kiosky
+    } catch (e) {
+      updateError = String(e);
+      updateStatus = "";
+    }
+  }
+
+  onMount(() => {
+    api.getAutostart().then((v) => (autostart = v));
+    api.pendingUpdate().then((u) => (update = u));
+    const unFound = listen<UpdateInfo | null>("update-available", (e) => (update = e.payload));
+    const unProgress = listen<{ done: number; total: number | null }>("update-progress", (e) => (progress = e.payload));
+    return () => {
+      unFound.then((f) => f());
+      unProgress.then((f) => f());
+    };
   });
 
   async function setAutostart(v: boolean) {
@@ -258,6 +298,51 @@
   {/each}
 </div>
 
+<h2>Mises à jour</h2>
+<div class="card group">
+  <div class="row">
+    <div class="ico"><Icon name="refresh" size={18} /></div>
+    <div class="grow">
+      {#if update}
+        <div class="strong">Kiosky {update.version} est disponible</div>
+        <div class="small muted">
+          {#if updateStatus === "installing"}
+            {progress
+              ? `Téléchargement : ${fmtBytes(progress.done)}${progress.total ? ` sur ${fmtBytes(progress.total)}` : ""}`
+              : "Téléchargement…"}
+          {:else}
+            Version installée : {version}. Kiosky se ferme, s'installe puis se relance.
+          {/if}
+        </div>
+      {:else}
+        <div class="strong">Kiosky {version}</div>
+        <div class="small muted">
+          {updateStatus === "checking" ? "Recherche en cours…" : updateStatus === "none" ? "Kiosky est à jour." : "Aucune recherche depuis l'ouverture de cette page."}
+        </div>
+      {/if}
+      {#if updateError}<div class="small uerror">{updateError}</div>{/if}
+    </div>
+    {#if update}
+      <button class="btn primary" disabled={updateStatus === "installing"} onclick={installUpdate}>
+        {updateStatus === "installing" ? "Installation…" : "Installer"}
+      </button>
+    {:else}
+      <button class="btn" disabled={updateStatus === "checking"} onclick={checkUpdate}>Rechercher</button>
+    {/if}
+  </div>
+  {#if update?.notes}
+    <div class="row notes small">{update.notes}</div>
+  {/if}
+  <div class="row">
+    <div class="ico"><Icon name="clock" size={18} /></div>
+    <div class="grow">
+      <div class="strong">Rechercher automatiquement</div>
+      <div class="small muted">Au lancement puis toutes les six heures. Rien n'est installé sans ton accord.</div>
+    </div>
+    <Toggle checked={s.update_check} label="Rechercher automatiquement les mises à jour" onchange={(v) => { s.update_check = v; saveSettings(0); }} />
+  </div>
+</div>
+
 <h2>À propos</h2>
 <div class="card group">
   <div class="row">
@@ -276,6 +361,14 @@
 </div>
 
 <style>
+  .notes {
+    white-space: pre-wrap;
+    color: var(--text-2);
+  }
+  .uerror {
+    margin-top: 4px;
+    color: var(--bad);
+  }
   .intro {
     margin: -6px 0 10px;
   }

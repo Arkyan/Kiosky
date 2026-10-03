@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
   import Icon from "./lib/Icon.svelte";
+  import { api } from "./lib/api";
   import { store, loadSettings } from "./lib/settings.svelte";
   import { MODULES } from "./lib/modules";
   import ConverterPage from "./pages/ConverterPage.svelte";
@@ -50,11 +51,14 @@
     if (page !== "settings" && !nav.some((n) => n.id === page)) page = "converter";
   });
   let loadError = $state("");
+  let updateReady = $state(false);
 
   onMount(() => {
     loadSettings().catch((e) => (loadError = String(e)));
     // La palette peut ouvrir une page (« nettoyage », « ports »…).
     const unSettings = listen("settings-changed", () => loadSettings());
+    api.pendingUpdate().then((u) => (updateReady = !!u));
+    const unUpdate = listen("update-available", (e) => (updateReady = !!e.payload));
     const un = listen<string>("navigate", (e) => {
       const target = e.payload as Page;
       if (target === "settings" || nav.some((n) => n.id === target)) page = target;
@@ -62,6 +66,7 @@
     return () => {
       un.then((f) => f());
       unSettings.then((f) => f());
+      unUpdate.then((f) => f());
     };
   });
 </script>
@@ -95,6 +100,7 @@
     <button class="nav-item" class:active={page === "settings"} onclick={() => (page = "settings")}>
       <Icon name="settings" />
       <span>Réglages</span>
+      {#if updateReady}<span class="dot" title="Mise à jour disponible"></span>{/if}
     </button>
   </aside>
 
@@ -239,6 +245,13 @@
 
   .spacer {
     flex: 1;
+  }
+  .dot {
+    width: 8px;
+    height: 8px;
+    margin-left: auto;
+    border-radius: 50%;
+    background: var(--accent);
   }
 
   .content {
