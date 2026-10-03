@@ -1,6 +1,6 @@
 [package]
 name = "kiosky"
-version = "0.2.2"
+version = "0.2.3"
 description = "Boîte à outils Windows : convertisseur, expanseur de texte, pipette, mixeur de volume, démarrage, nettoyage, ports, moniteur"
 edition = "2021"
 
