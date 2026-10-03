@@ -90,6 +90,19 @@ textarea {
   user-select: text;
 }
 
+/* La liste déroulante est dessinée par le système, hors de la page : le fond translucide des
+   champs y devenait blanc, sous un texte blanc en thème sombre. On lui donne un fond opaque. */
+select option {
+  background: #ffffff;
+  color: #1a1a1a;
+}
+@media (prefers-color-scheme: dark) {
+  select option {
+    background: #2c2c2c;
+    color: #ffffff;
+  }
+}
+
 /* ─── Composants génériques ─── */
 
 .card {
