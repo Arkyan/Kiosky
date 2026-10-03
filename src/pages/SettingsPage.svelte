@@ -14,6 +14,7 @@
   const WIDGET_ITEMS: { id: string; label: string; icon: string }[] = [
     { id: "cpu", label: "Processeur", icon: "activity" },
     { id: "ram", label: "Mémoire", icon: "activity" },
+    { id: "gpu", label: "Processeur graphique", icon: "activity" },
     { id: "net", label: "Réseau ↓↑", icon: "globe" },
     { id: "time", label: "Heure", icon: "clock" },
     { id: "date", label: "Date", icon: "clock" },

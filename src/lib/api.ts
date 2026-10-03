@@ -111,11 +111,21 @@ export type FoundFolder = {
   modified: number;
 };
 
-export type Sample = { cpu: number; mem_used: number; mem_total: number; net_down: number; net_up: number };
+export type Sample = {
+  cpu: number;
+  mem_used: number;
+  mem_total: number;
+  net_down: number;
+  net_up: number;
+  gpu: number | null;
+  gpu_mem: number;
+};
+export type Gpu = { name: string; mem_total: number };
 export type Disk = { letter: string; used: number; total: number };
 export type ProcGroup = { name: string; pids: number[]; cpu: number; mem: number; system: boolean };
 export type TopProcs = { cpu: ProcGroup[]; mem: ProcGroup[] };
-export type MonitorState = { history: Sample[]; disks: Disk[]; top: TopProcs };
+export type MonitorState = { gpu: Gpu | null; history: Sample[]; disks: Disk[]; top: TopProcs };
+export type UpdateInfo = { version: string; notes: string };
 
 export type AudioApp = {
   key: string;

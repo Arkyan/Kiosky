@@ -13,12 +13,12 @@ Rust + Tauri 2 pour la logique, Svelte 5 pour l'interface (style Windows 11, Mic
 | **Variables** | PATH et variables utilisateur/système : chemins introuvables et doublons signalés, réordonnancement, annulation de la dernière modification |
 | **Conteneurs** | Distributions WSL (terminal, fichiers, démarrer/arrêter, par défaut) et conteneurs Docker groupés par projet compose (démarrer, arrêter, journaux, terminal, ports), lancement de Docker Desktop |
 | **Volume** | Volume et sourdine par application avec vu-mètres en direct, sortie par application (Spotify sur les enceintes, Discord dans le casque), micro (volume, niveau, coupure par raccourci `Ctrl+Alt+M`), préréglages |
-| **Moniteur** | CPU, mémoire et réseau en direct (2 min d'historique), espace disque, processus les plus gourmands (avec arrêt), résumé dans l'infobulle et jauge CPU comme icône |
+| **Moniteur** | CPU, processeur graphique (utilisation et mémoire vidéo), mémoire et réseau en direct (2 min d'historique), espace disque, processus les plus gourmands (avec arrêt), résumé dans l'infobulle et jauge CPU comme icône |
 | **Démarrage** | Programmes lancés avec Windows (registre, dossier Démarrage, tâches planifiées), activation/désactivation, temps de démarrage |
 | **Nettoyage** | Temp, caches des navigateurs, rapports d'erreur, Windows Update, caches npm/pip, corbeille, avec la place gagnée. Recherche de dossiers par nom (`node_modules`, `target`, `.venv`…) dans les dossiers choisis |
 | **Ports** | Qui écoute sur quel port (« le port 3000 est-il libre ? »), processus propriétaire, bouton pour l'arrêter. Les ports de Windows peuvent être masqués |
 
-**Barre flottante** (Réglages → Barre flottante) : petite barre toujours visible, posée sur la barre des tâches (à gauche ou à droite) ou déplaçable, avec les éléments choisis : CPU, RAM, réseau, heure, date, batterie, serveurs locaux, conteneurs Docker, musique en cours (pochette, titre, ⏮ ⏯ ⏭), volume (molette), voyant du micro. Clic sur un élément : son action ; survol : le détail, toujours affiché au-dessus de la barre. Elle se cache quand une application est en plein écran.
+**Barre flottante** (Réglages → Barre flottante) : petite barre toujours visible, posée sur la barre des tâches (à gauche ou à droite) ou déplaçable, avec les éléments choisis : CPU, GPU, RAM, réseau, heure, date, batterie, serveurs locaux, conteneurs Docker, musique en cours (pochette, titre, ⏮ ⏯ ⏭), volume (molette), voyant du micro. Clic sur un élément : son action ; survol : le détail, toujours affiché au-dessus de la barre. Elle se cache quand une application est en plein écran.
 
 Chaque module peut être désactivé dans Réglages → Modules (il disparaît de l'interface et ne tourne plus en arrière-plan), et chaque source de la palette dans Réglages → Palette.
 
@@ -71,7 +71,7 @@ src-tauri/src/
   widget.rs              Barre flottante : placement sur la barre des tâches, premier plan, plein écran
   launcher.rs            « Ouvrir avec » : Explorateur, terminal, VS Code, JetBrains…
   colorpicker.rs         Pipette : hook souris + capture d'écran (GDI)
-  monitor.rs             CPU / RAM / réseau / disques
+  monitor.rs             CPU / GPU / RAM / réseau / disques
   cleaner.rs             Nettoyage (ne suit jamais les liens ni les jonctions)
   ports.rs               Tables TCP/UDP (IP Helper) et arrêt de processus
   startup.rs             Registre, dossiers Démarrage, tâches, journal de performances

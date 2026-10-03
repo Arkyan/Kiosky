@@ -144,7 +144,7 @@ impl Default for Settings {
             palette_disabled: vec![],
             widget_enabled: false,
             widget_items: ["cpu", "ram", "net", "time"].iter().map(|s| s.to_string()).collect(),
-            widget_order: ["cpu", "ram", "net", "time", "date", "battery", "ports", "docker", "media", "volume", "mic"].iter().map(|s| s.to_string()).collect(),
+            widget_order: ["cpu", "gpu", "ram", "net", "time", "date", "battery", "ports", "docker", "media", "volume", "mic"].iter().map(|s| s.to_string()).collect(),
             widget_mode: "taskbar-left".into(),
             widget_pos: None,
             widget_vertical: false,

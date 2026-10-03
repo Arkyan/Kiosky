@@ -3,7 +3,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import Icon from "./lib/Icon.svelte";
-  import { api, fmtBytes, type Sample, type Settings, type TopProcs } from "./lib/api";
+  import { api, fmtBytes, type Gpu, type Sample, type Settings, type TopProcs } from "./lib/api";
 
   // Barre flottante : fenêtre transparente qui s'ajuste à son contenu (Rust la place et l'affiche).
   // Clic sur un élément : son action. Survol : le détail en infobulle. Molette sur le volume : réglage.
@@ -13,6 +13,7 @@
   let settings = $state<Settings | null>(null);
   let sample = $state<Sample | null>(null);
   let top = $state<TopProcs | null>(null);
+  let gpu = $state<Gpu | null>(null);
   let now = $state(new Date());
   let battery = $state<{ present: boolean; percent: number; charging: boolean } | null>(null);
   let devPorts = $state<{ port: number; process: string }[]>([]);
@@ -36,6 +37,7 @@
   async function loadSettings() {
     settings = await api.getSettings();
     taskbarH = await api.taskbarHeight();
+    if (has("gpu") && !gpu) gpu = (await api.getMonitor()).gpu;
     refreshSlow();
     refreshFast();
     refreshDocker();
@@ -259,6 +261,11 @@
       `Processeur : ${sample ? pct(sample.cpu) : "…"}` +
       (top?.cpu.length ? "\n\n" + top.cpu.slice(0, 3).map((g) => `${strip(g.name)}\t${pct(g.cpu)}`).join("\n") : "") +
       "\n\nClic : ouvrir le Moniteur",
+    gpu:
+      `Processeur graphique : ${sample?.gpu != null ? pct(sample.gpu) : "…"}` +
+      (gpu ? `\n${gpu.name}` : "") +
+      (gpu?.mem_total && sample ? `\n\nMémoire vidéo\t${fmtBytes(sample.gpu_mem)} sur ${fmtBytes(gpu.mem_total)}` : "") +
+      "\n\nClic : ouvrir le Moniteur",
     ram:
       `Mémoire : ${sample ? `${fmtBytes(sample.mem_used)} sur ${fmtBytes(sample.mem_total)} (${pct(memPct)})` : "…"}` +
       (top?.mem.length ? "\n\n" + top.mem.slice(0, 3).map((g) => `${strip(g.name)}\t${fmtBytes(g.mem)}`).join("\n") : "") +
@@ -309,6 +316,12 @@
         <span class="lbl">CPU</span>
         <span class="gauge"><span style:height={`${Math.min(100, sample?.cpu ?? 0)}%`}></span></span>
         <span class="val w-pct">{sample ? pct(sample.cpu) : "…"}</span>
+      </span>
+    {:else if id === "gpu" && sample?.gpu != null}
+      <span class="item click {level(sample.gpu)}" data-act="monitor" data-tip="gpu">
+        <span class="lbl">GPU</span>
+        <span class="gauge"><span style:height={`${Math.min(100, sample.gpu)}%`}></span></span>
+        <span class="val w-pct">{pct(sample.gpu)}</span>
       </span>
     {:else if id === "ram"}
       <span class="item click {level(memPct)}" data-act="monitor" data-tip="ram">

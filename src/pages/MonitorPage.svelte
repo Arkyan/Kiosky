@@ -4,13 +4,14 @@
   import Icon from "../lib/Icon.svelte";
   import PageHeader from "../lib/PageHeader.svelte";
   import Toggle from "../lib/Toggle.svelte";
-  import { api, fmtBytes, type Disk, type ProcGroup, type Sample, type TopProcs } from "../lib/api";
+  import { api, fmtBytes, type Disk, type Gpu, type ProcGroup, type Sample, type TopProcs } from "../lib/api";
   import { store, saveSettings } from "../lib/settings.svelte";
 
   const HISTORY = 120; // 2 minutes, une mesure par seconde
 
   let history = $state<Sample[]>([]);
   let disks = $state<Disk[]>([]);
+  let gpu = $state<Gpu | null>(null);
   let top = $state<TopProcs>({ cpu: [], mem: [] });
   let confirmKey = $state<string | null>(null);
   let killError = $state("");
@@ -20,6 +21,7 @@
     api.getMonitor().then((m) => {
       history = m.history;
       disks = m.disks;
+      gpu = m.gpu;
       top = m.top;
     });
     const un = listen<Sample>("monitor-sample", (e) => {
@@ -56,6 +58,7 @@
   }
 
   const cpuCurve = $derived(area(history.map((s) => s.cpu), 100));
+  const gpuCurve = $derived(area(history.map((s) => s.gpu ?? 0), 100));
   const memCurve = $derived(area(history.map((s) => (s.mem_total ? (s.mem_used / s.mem_total) * 100 : 0)), 100));
   const downCurve = $derived(area(history.map((s) => s.net_down), netMax));
   const upCurve = $derived(area(history.map((s) => s.net_up), netMax));
@@ -95,7 +98,7 @@
   const pretty = (name: string) => name.replace(/\.exe$/i, "");
 </script>
 
-<PageHeader title="Moniteur" subtitle="Processeur, mémoire et réseau en direct, sur les 2 dernières minutes." />
+<PageHeader title="Moniteur" subtitle="Processeur, carte graphique, mémoire et réseau en direct, sur les 2 dernières minutes." />
 
 <div class="grid">
   <div class="card metric {level(last?.cpu ?? 0)}">
@@ -109,6 +112,22 @@
     </svg>
   </div>
 
+  {#if gpu}
+    <div class="card metric {level(last?.gpu ?? 0)}">
+      <div class="head">
+        <span class="label">Processeur graphique</span>
+        <span class="value">{last?.gpu != null ? pct(last.gpu) : "…"}</span>
+      </div>
+      <svg viewBox="0 0 {W} {H}" preserveAspectRatio="none">
+        <path class="fill" d={gpuCurve.fill} />
+        <path class="line" d={gpuCurve.line} />
+      </svg>
+      <span class="sub small muted gname" title={gpu.name}>
+        {gpu.name}{last && gpu.mem_total ? ` · ${fmtBytes(last.gpu_mem)} sur ${fmtBytes(gpu.mem_total)}` : ""}
+      </span>
+    </div>
+  {/if}
+
   <div class="card metric {level(memPct)}">
     <div class="head">
       <span class="label">Mémoire</span>
@@ -121,7 +140,7 @@
     <span class="sub small muted">{last ? `${fmtBytes(last.mem_used)} sur ${fmtBytes(last.mem_total)}` : ""}</span>
   </div>
 
-  <div class="card metric net wide">
+  <div class="card metric net" class:wide={!gpu}>
     <div class="head">
       <span class="label">Réseau</span>
       <span class="legend">
@@ -297,6 +316,11 @@
   }
   .sub {
     margin-top: -2px;
+  }
+  .gname {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
 
   h2 {

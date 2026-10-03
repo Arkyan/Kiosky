@@ -1,4 +1,4 @@
-//! Moniteur léger : CPU, mémoire, réseau et disques.
+//! Moniteur léger : CPU, processeur graphique, mémoire, réseau et disques.
 //! Un thread mesure toutes les secondes et garde les 2 dernières minutes en mémoire.
 
 use serde::Serialize;
@@ -7,9 +7,14 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::FILETIME;
+use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIFactory1};
 use windows::Win32::NetworkManagement::IpHelper::{FreeMibTable, GetIfTable2, MIB_IF_TABLE2};
 use windows::Win32::NetworkManagement::Ndis::IfOperStatusUp;
 use windows::Win32::Storage::FileSystem::{GetDiskFreeSpaceExW, GetDriveTypeW, GetLogicalDrives};
+use windows::Win32::System::Performance::{
+    PdhAddEnglishCounterW, PdhCloseQuery, PdhCollectQueryData, PdhGetFormattedCounterArrayW, PdhOpenQueryW,
+    PDH_FMT_COUNTERVALUE_ITEM_W, PDH_FMT_DOUBLE,
+};
 use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
 use windows::Win32::System::Threading::GetSystemTimes;
 
@@ -25,6 +30,10 @@ pub struct Sample {
     /// Octets par seconde
     pub net_down: u64,
     pub net_up: u64,
+    /// Utilisation du processeur graphique, 0 à 100 (absent s'il n'y en a pas)
+    pub gpu: Option<f32>,
+    /// Mémoire vidéo dédiée utilisée (octets)
+    pub gpu_mem: u64,
 }
 
 #[derive(Serialize, Clone)]
@@ -34,8 +43,19 @@ pub struct Disk {
     pub total: u64,
 }
 
+#[derive(Serialize, Clone)]
+pub struct Gpu {
+    pub name: String,
+    /// Mémoire vidéo dédiée (octets)
+    pub mem_total: u64,
+    /// « luid_0x00000000_0x0000d3a5 », tel qu'il apparaît dans le nom des compteurs
+    #[serde(skip)]
+    luid: String,
+}
+
 #[derive(Serialize)]
 pub struct MonitorState {
+    pub gpu: Option<Gpu>,
     pub history: Vec<Sample>,
     pub disks: Vec<Disk>,
     pub top: TopProcs,
@@ -118,7 +138,7 @@ pub fn disks() -> Vec<Disk> {
 }
 
 pub fn state() -> MonitorState {
-    MonitorState { history: history().lock().unwrap().iter().cloned().collect(), disks: disks(), top: top() }
+    MonitorState { gpu: gpu(), history: history().lock().unwrap().iter().cloned().collect(), disks: disks(), top: top() }
 }
 
 /// Démarre la mesure en continu. `on_sample` est appelé à chaque seconde,
@@ -126,6 +146,7 @@ pub fn state() -> MonitorState {
 pub fn start(on_sample: impl Fn(&Sample, &TopProcs) + Send + 'static) {
     std::thread::spawn(move || {
         let mut tracker = ProcTracker::new();
+        let gpu_counters = gpu().and_then(|g| GpuCounters::open(g.luid));
         let mut last_cpu = cpu_times();
         let mut last_net = net_octets();
         let mut last_at = Instant::now();
@@ -151,7 +172,11 @@ pub fn start(on_sample: impl Fn(&Sample, &TopProcs) + Send + 'static) {
             last_net = net;
 
             let (mem_used, mem_total) = memory();
-            let sample = Sample { cpu, mem_used, mem_total, net_down, net_up };
+            let (gpu, gpu_mem) = match gpu_counters.as_ref().map(|c| c.sample()) {
+                Some((usage, mem)) => (Some(usage), mem),
+                None => (None, 0),
+            };
+            let sample = Sample { cpu, mem_used, mem_total, net_down, net_up, gpu, gpu_mem };
             {
                 let mut h = history().lock().unwrap();
                 if h.len() == HISTORY {
@@ -181,14 +206,122 @@ pub fn fmt_bytes(b: u64) -> String {
 
 /// Texte de l'infobulle de l'icône (limitée à 127 caractères par Windows).
 pub fn tooltip(s: &Sample) -> String {
+    let gpu = s.gpu.map(|g| format!(" · GPU {g:.0} %")).unwrap_or_default();
     format!(
-        "Kiosky\nCPU {:.0} % · RAM {} / {}\n↓ {}/s  ↑ {}/s",
+        "Kiosky\nCPU {:.0} %{gpu}\nRAM {} / {}\n↓ {}/s  ↑ {}/s",
         s.cpu,
         fmt_bytes(s.mem_used),
         fmt_bytes(s.mem_total),
         fmt_bytes(s.net_down),
         fmt_bytes(s.net_up)
     )
+}
+
+// ───────────────────────────── Processeur graphique ─────────────────────────────
+
+static GPU: OnceLock<Option<Gpu>> = OnceLock::new();
+
+/// La carte graphique principale : celle qui a le plus de mémoire dédiée (sur un portable,
+/// la carte dédiée plutôt que la puce intégrée).
+pub fn gpu() -> Option<Gpu> {
+    GPU.get_or_init(|| unsafe {
+        const SOFTWARE: u32 = 2; // DXGI_ADAPTER_FLAG_SOFTWARE : rendu logiciel de Windows
+        let factory: IDXGIFactory1 = CreateDXGIFactory1().ok()?;
+        let mut best: Option<Gpu> = None;
+        let mut i = 0;
+        while let Ok(adapter) = factory.EnumAdapters1(i) {
+            i += 1;
+            let Ok(d) = adapter.GetDesc1() else { continue };
+            let mem_total = d.DedicatedVideoMemory as u64;
+            if d.Flags & SOFTWARE != 0 || best.as_ref().is_some_and(|b| b.mem_total >= mem_total) {
+                continue;
+            }
+            let len = d.Description.iter().position(|&c| c == 0).unwrap_or(d.Description.len());
+            best = Some(Gpu {
+                name: String::from_utf16_lossy(&d.Description[..len]).trim().to_string(),
+                mem_total,
+                luid: format!("luid_0x{:08x}_0x{:08x}", d.AdapterLuid.HighPart, d.AdapterLuid.LowPart),
+            });
+        }
+        best
+    })
+    .clone()
+}
+
+const PDH_MORE_DATA: u32 = 0x800007D2;
+
+/// Compteurs de performance de Windows, les mêmes que ceux du Gestionnaire des tâches :
+/// ils fonctionnent avec toutes les marques de cartes.
+struct GpuCounters {
+    query: isize,
+    engine: isize,
+    memory: isize,
+    luid: String,
+}
+
+impl GpuCounters {
+    fn open(luid: String) -> Option<Self> {
+        unsafe {
+            let mut query = 0isize;
+            if PdhOpenQueryW(PCWSTR::null(), 0, &mut query) != 0 {
+                return None;
+            }
+            let add = |path: &str| {
+                let mut counter = 0isize;
+                let path = wide(path);
+                (PdhAddEnglishCounterW(query, PCWSTR(path.as_ptr()), 0, &mut counter) == 0).then_some(counter)
+            };
+            let Some(engine) = add(r"\GPU Engine(*)\Utilization Percentage") else {
+                PdhCloseQuery(query);
+                return None;
+            };
+            let memory = add(r"\GPU Adapter Memory(*)\Dedicated Usage").unwrap_or(0);
+            // Un pourcentage se calcule entre deux relevés : celui-ci sert de point de départ.
+            PdhCollectQueryData(query);
+            Some(Self { query, engine, memory, luid })
+        }
+    }
+
+    /// Valeur de chaque instance du compteur (nom en minuscules).
+    fn values(counter: isize) -> Vec<(String, f64)> {
+        if counter == 0 {
+            return Vec::new();
+        }
+        unsafe {
+            let (mut size, mut count) = (0u32, 0u32);
+            if PdhGetFormattedCounterArrayW(counter, PDH_FMT_DOUBLE, &mut size, &mut count, None) != PDH_MORE_DATA {
+                return Vec::new();
+            }
+            // Tampon de u64 pour l'alignement : les éléments sont suivis de leurs noms.
+            let mut buf: Vec<u64> = vec![0; size as usize / 8 + 1];
+            let items = buf.as_mut_ptr() as *mut PDH_FMT_COUNTERVALUE_ITEM_W;
+            if PdhGetFormattedCounterArrayW(counter, PDH_FMT_DOUBLE, &mut size, &mut count, Some(items)) != 0 {
+                return Vec::new(); // une instance est apparue entre les deux appels : au prochain relevé
+            }
+            std::slice::from_raw_parts(items, count as usize)
+                .iter()
+                // 0 et 1 : donnée valide ; une instance toute neuve n'a pas encore de valeur.
+                .filter(|it| it.FmtValue.CStatus <= 1 && !it.szName.is_null())
+                .map(|it| (it.szName.to_string().unwrap_or_default().to_lowercase(), it.FmtValue.Anonymous.doubleValue))
+                .collect()
+        }
+    }
+
+    /// (utilisation de 0 à 100, mémoire dédiée utilisée en octets)
+    fn sample(&self) -> (f32, u64) {
+        unsafe { PdhCollectQueryData(self.query) };
+        // Une instance par processus et par moteur (« pid_1234_luid_…_phys_0_eng_0_engtype_3d ») :
+        // on additionne les processus de chaque moteur, puis on garde le moteur le plus chargé.
+        let mut engines: HashMap<String, f64> = HashMap::new();
+        for (name, value) in Self::values(self.engine) {
+            if let Some(at) = name.find(&self.luid) {
+                *engines.entry(name[at..].to_string()).or_default() += value;
+            }
+        }
+        let usage = engines.values().fold(0.0f64, |a, &b| a.max(b)).clamp(0.0, 100.0);
+        let mem: f64 = Self::values(self.memory).iter().filter(|(n, _)| n.contains(&self.luid)).map(|(_, v)| v).sum();
+        (usage as f32, mem.max(0.0) as u64)
+    }
 }
 
 // ───────────────────────────── Processus ─────────────────────────────
