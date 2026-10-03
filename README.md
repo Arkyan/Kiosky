@@ -5,7 +5,7 @@ Rust + Tauri 2 pour la logique, Svelte 5 pour l'interface (style Windows 11, Mic
 
 | Module | Ce qu'il fait |
 |---|---|
-| **Palette** | Raccourci global (`Ctrl+Shift+Space` par défaut) : recherche façon menu Démarrer (applications, projets, dossiers, Paramètres Windows, outils système, verrouiller/veille/redémarrer, pages de Kiosky) qui apprend de tes habitudes, plus calculs, unités, devises, fuseaux, encodages `kill 3000` / `port 3000`, recherche web (`g`, `yt`, `gh`, `mdn`, `npm`, `crates`, `so`, `wiki`…) et commandes `>ipconfig` avec la sortie affichée |
+| **Palette** | Raccourci global (`Ctrl+Shift+Space` par défaut) : recherche façon menu Démarrer (applications, projets, dossiers, Paramètres Windows, outils système, verrouiller/veille/redémarrer, pages de Kiosky) qui apprend de tes habitudes, plus calculs, unités, devises, fuseaux, encodages `kill 3000` / `port 3000`, recherche web (`g`, `yt`, `gh`, `mdn`, `npm`, `crates`, `so`, `wiki`…) commandes `>ipconfig` avec la sortie affichée, et un assistant (`? ta question`, ou le bouton à gauche du champ) : Claude ou Gemini avec ta clé API, en conversation, avec des actions sur le texte copié (corriger, traduire, résumer, expliquer, reformuler) |
 | **Expanseur de texte** | `;mail` → ton adresse, `;sig` → ta signature, `;date` → la date du jour, dans toutes les applications |
 | **Pipette** | Raccourci global (`Win+Shift+C` par défaut) : loupe sous la souris, clic = couleur copiée en HEX, RGB ou HSL, historique |
 | **Projets** | Détecte les projets (Git, Node, Rust, PHP, .NET, Android…), branche et modifications non commitées, ouverture dans l'éditeur adapté |
@@ -16,9 +16,10 @@ Rust + Tauri 2 pour la logique, Svelte 5 pour l'interface (style Windows 11, Mic
 | **Moniteur** | CPU, processeur graphique (utilisation et mémoire vidéo), mémoire et réseau en direct (2 min d'historique), espace disque, température de la carte graphique, processus les plus gourmands en CPU, GPU et mémoire (avec arrêt, et une explication pour ceux de Windows), résumé dans l'infobulle et jauge CPU comme icône |
 | **Démarrage** | Programmes lancés avec Windows (registre, dossier Démarrage, tâches planifiées), activation/désactivation, temps de démarrage |
 | **Nettoyage** | Temp, caches des navigateurs, rapports d'erreur, Windows Update, caches npm/pip, corbeille, avec la place gagnée. Recherche de dossiers par nom (`node_modules`, `target`, `.venv`…) dans les dossiers choisis |
+| **Mises à jour** | Applications installées qui ont une nouvelle version (via winget), mise à jour une par une ou toutes d'un coup, applications à ignorer |
 | **Ports** | Qui écoute sur quel port (« le port 3000 est-il libre ? »), processus propriétaire, bouton pour l'arrêter. Les ports de Windows peuvent être masqués |
 
-**Barre flottante** (Réglages → Barre flottante) : petite barre toujours visible, posée sur la barre des tâches (à gauche ou à droite) ou déplaçable, avec les éléments choisis : CPU, GPU, RAM, réseau, heure, date, batterie, serveurs locaux, conteneurs Docker, musique en cours (pochette, titre, ⏮ ⏯ ⏭), volume (molette), voyant du micro. Clic sur un élément : son action ; survol : le détail, toujours affiché au-dessus de la barre. Elle se cache quand une application est en plein écran.
+**Barre flottante** (Réglages → Barre flottante) : petite barre toujours visible, posée sur la barre des tâches (à gauche ou à droite) ou déplaçable, avec les éléments choisis : CPU, GPU, RAM, réseau, heure, date, batterie, serveurs locaux, conteneurs Docker, mises à jour disponibles, musique en cours (pochette, titre, ⏮ ⏯ ⏭), volume (molette), voyant du micro. Clic sur un élément : son action ; survol : le détail, toujours affiché au-dessus de la barre. Elle se cache quand une application est en plein écran.
 
 Chaque module peut être désactivé dans Réglages → Modules (il disparaît de l'interface et ne tourne plus en arrière-plan), et chaque source de la palette dans Réglages → Palette.
 
@@ -85,6 +86,8 @@ src-tauri/src/
   envvars.rs             Variables d'environnement (registre), sauvegarde avant chaque écriture
   media.rs               Musique en cours (contrôles multimédias de Windows)
   containers.rs          WSL (wsl.exe) et Docker (CLI docker)
+  apps.rs                Mises à jour des applications (winget)
+  ai.rs                  Assistant de la palette (API Claude et Gemini, clés chiffrées par Windows)
   widget.rs              Barre flottante : placement sur la barre des tâches, premier plan, plein écran
   launcher.rs            « Ouvrir avec » : Explorateur, terminal, VS Code, JetBrains…
   colorpicker.rs         Pipette : hook souris + capture d'écran (GDI)

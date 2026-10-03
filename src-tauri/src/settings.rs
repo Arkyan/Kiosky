@@ -89,6 +89,12 @@ pub struct Settings {
     pub widget_opacity: f32,
     /// Cherche une nouvelle version au lancement, puis de temps en temps
     pub update_check: bool,
+    /// Applications dont on ne propose plus la mise à jour (identifiants winget)
+    pub updates_ignored: Vec<String>,
+    /// Assistant de la palette : « claude » ou « gemini » (les clés API sont à part, voir ai.rs)
+    pub ai_provider: String,
+    pub ai_claude_model: String,
+    pub ai_gemini_model: String,
 }
 
 impl Settings {
@@ -146,12 +152,16 @@ impl Default for Settings {
             palette_disabled: vec![],
             widget_enabled: false,
             widget_items: ["cpu", "ram", "net", "time"].iter().map(|s| s.to_string()).collect(),
-            widget_order: ["cpu", "gpu", "ram", "net", "time", "date", "battery", "ports", "docker", "media", "volume", "mic"].iter().map(|s| s.to_string()).collect(),
+            widget_order: ["cpu", "gpu", "ram", "net", "time", "date", "battery", "ports", "docker", "updates", "media", "volume", "mic"].iter().map(|s| s.to_string()).collect(),
             widget_mode: "taskbar-left".into(),
             widget_pos: None,
             widget_vertical: false,
             widget_opacity: 0.85,
             update_check: true,
+            updates_ignored: vec![],
+            ai_provider: "claude".into(),
+            ai_claude_model: "claude-opus-5-5".into(),
+            ai_gemini_model: "gemini-flash-latest".into(),
         }
     }
 }

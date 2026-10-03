@@ -1,6 +1,8 @@
 // En release, pas de console noire derrière l'application.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod ai;
+mod apps;
 mod audio;
 mod calc;
 mod cleaner;
@@ -1054,7 +1056,90 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
     result.map_err(|e| e.to_string())
 }
 
-// ───────────────────────────── Mises à jour ─────────────────────────────
+// ───────────────────────────── Assistant ─────────────────────────────
+
+/// Envoie la conversation au fournisseur choisi. La réponse arrive par les événements
+/// « ai-delta » ; la commande se termine avec elle.
+#[tauri::command]
+async fn ai_chat(app: AppHandle, state: State<'_, AppState>, id: u64, messages: Vec<ai::ChatMessage>) -> Result<(), String> {
+    let (provider, model) = {
+        let s = state.settings.lock().unwrap();
+        let model = if s.ai_provider == "gemini" { s.ai_gemini_model.clone() } else { s.ai_claude_model.clone() };
+        (s.ai_provider.clone(), model)
+    };
+    let dir = config_dir(&state);
+    ai::chat(&dir, &provider, model.trim(), &messages, id, |text| {
+        let _ = app.emit_to("palette", "ai-delta", serde_json::json!({ "id": id, "text": text }));
+    })
+    .await
+}
+
+#[tauri::command]
+fn ai_stop() {
+    ai::stop();
+}
+
+#[tauri::command]
+fn ai_key_status(state: State<'_, AppState>) -> ai::KeyStatus {
+    ai::key_status(&config_dir(&state))
+}
+
+#[tauri::command]
+fn ai_set_key(state: State<'_, AppState>, provider: String, key: String) -> Result<(), String> {
+    ai::set_key(&config_dir(&state), &provider, &key)
+}
+
+#[tauri::command]
+async fn ai_gemini_models(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    let dir = config_dir(&state);
+    ai::gemini_models(&dir).await
+}
+
+#[tauri::command]
+fn get_clipboard_text() -> Option<String> {
+    util::get_clipboard()
+}
+
+// ───────────────────────────── Mises à jour des applications ─────────────────────────────
+
+/// La dernière recherche si elle existe, sinon (ou si `refresh`) une nouvelle.
+#[tauri::command]
+async fn get_app_updates(app: AppHandle, refresh: bool) -> Result<apps::UpdatesState, String> {
+    if !refresh {
+        if let Some(state) = apps::cached() {
+            return Ok(state);
+        }
+    }
+    let state = blocking(|| Ok(apps::check())).await?;
+    let _ = app.emit("app-updates", &state);
+    Ok(state)
+}
+
+#[tauri::command]
+async fn upgrade_app(app: AppHandle, id: String) -> Result<(), String> {
+    blocking(move || apps::upgrade(&id)).await?;
+    if let Some(state) = apps::cached() {
+        let _ = app.emit("app-updates", &state);
+    }
+    Ok(())
+}
+
+/// Recherche en arrière-plan, pour le compteur de la barre flottante : une minute après
+/// le lancement, puis toutes les six heures.
+fn watch_app_updates(app: AppHandle) {
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(60));
+        loop {
+            let enabled = app.state::<AppState>().settings.lock().unwrap().module_on("updates");
+            if enabled {
+                let _ = app.emit("app-updates", apps::check());
+            }
+            std::thread::sleep(Duration::from_secs(6 * 3600));
+        }
+    });
+}
+
+// ───────────────────────────── Mise à jour de Kiosky ─────────────────────────────
 
 #[derive(serde::Serialize, Clone)]
 struct UpdateInfo {
@@ -1204,6 +1289,7 @@ fn main() {
             build_tray(app.handle())?;
             search::refresh_apps(); // liste des applis prête avant la première recherche
             widget::start_guard();
+            watch_app_updates(app.handle().clone());
             // En développement, la version locale n'a pas à être remplacée par la dernière publiée.
             if !cfg!(debug_assertions) {
                 watch_updates(app.handle().clone());
@@ -1347,6 +1433,14 @@ fn main() {
             get_volume,
             get_autostart,
             set_autostart,
+            ai_chat,
+            ai_stop,
+            ai_key_status,
+            ai_set_key,
+            ai_gemini_models,
+            get_clipboard_text,
+            get_app_updates,
+            upgrade_app,
             check_update,
             pending_update,
             install_update,

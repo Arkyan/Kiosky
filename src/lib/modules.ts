@@ -11,6 +11,7 @@ export type ModuleId =
   | "monitor"
   | "startup"
   | "cleaner"
+  | "updates"
   | "ports";
 
 export type ModuleInfo = { id: ModuleId; label: string; icon: string; group: string; description: string };
@@ -27,6 +28,7 @@ export const MODULES: ModuleInfo[] = [
   { id: "monitor", label: "Moniteur", icon: "activity", group: "Système", description: "Graphiques, infobulle et jauge CPU de l'icône" },
   { id: "startup", label: "Démarrage", icon: "power", group: "Système", description: "Programmes lancés avec Windows" },
   { id: "cleaner", label: "Nettoyage", icon: "broom", group: "Système", description: "Fichiers temporaires, caches, node_modules…" },
+  { id: "updates", label: "Mises à jour", icon: "download", group: "Système", description: "Nouvelles versions des applications installées (winget)" },
   { id: "ports", label: "Ports", icon: "plug", group: "Système", description: "Ports ouverts, et kill 3000 dans la palette" },
 ];
 
@@ -42,4 +44,5 @@ export const PALETTE_SOURCES: { id: string; label: string; icon: string; descrip
   { id: "calc", label: "Calculs et conversions", icon: "calc", description: "2+2, 10 km en miles, 50 eur usd, heures…" },
   { id: "web", label: "Recherche web", icon: "globe", description: "g, yt, gh, mdn… et « Rechercher sur Google »" },
   { id: "shell", label: "Commandes", icon: "terminal", description: ">ipconfig : exécuter une commande PowerShell" },
+  { id: "ai", label: "Assistant", icon: "chat", description: "? ta question : une réponse de Claude ou Gemini" },
 ];

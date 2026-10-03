@@ -1,13 +1,21 @@
 <script lang="ts">
   import ConverterBox from "./lib/ConverterBox.svelte";
+
+  let chat = $state(false);
 </script>
 
 <div class="palette-root">
-  <ConverterBox palette />
+  <ConverterBox palette bind:chat />
   <footer>
-    <span><kbd>↑</kbd> <kbd>↓</kbd> naviguer</span>
-    <span><kbd>Entrée</kbd> ouvrir ou copier</span>
-    <span><kbd>Échap</kbd> fermer</span>
+    {#if chat}
+      <span><kbd>Entrée</kbd> envoyer</span>
+      <span><kbd>Échap</kbd> arrêter, puis retour à la recherche</span>
+    {:else}
+      <span><kbd>↑</kbd> <kbd>↓</kbd> naviguer</span>
+      <span><kbd>Entrée</kbd> ouvrir ou copier</span>
+      <span><kbd>?</kbd> demander à l'assistant</span>
+      <span><kbd>Échap</kbd> fermer</span>
+    {/if}
   </footer>
 </div>
 

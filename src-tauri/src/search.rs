@@ -165,6 +165,7 @@ const PAGES: &[(&str, &str, &str)] = &[
     ("folders", "Dossiers", "raccourcis dossiers favoris"),
     ("env", "Variables d'environnement", "path env variables"),
     ("containers", "Conteneurs", "docker wsl ubuntu linux conteneurs"),
+    ("updates", "Mises à jour des applications", "mettre à jour update winget versions logiciels"),
     ("settings", "Réglages de Kiosky", "réglages préférences raccourci"),
 ];
 

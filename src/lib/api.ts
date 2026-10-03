@@ -31,6 +31,10 @@ export type Settings = {
   widget_vertical: boolean;
   widget_opacity: number;
   update_check: boolean;
+  updates_ignored: string[];
+  ai_provider: "claude" | "gemini";
+  ai_claude_model: string;
+  ai_gemini_model: string;
   project_roots: string[];
   project_favorites: string[];
   project_opened: Record<string, number>;
@@ -128,6 +132,9 @@ export type ProcGroup = { name: string; pids: number[]; cpu: number; mem: number
 export type TopProcs = { cpu: ProcGroup[]; mem: ProcGroup[]; gpu: ProcGroup[] };
 export type MonitorState = { gpu: Gpu | null; history: Sample[]; disks: Disk[]; top: TopProcs };
 export type UpdateInfo = { version: string; notes: string };
+export type ChatMessage = { role: "user" | "assistant"; content: string };
+export type AppUpdate = { name: string; id: string; version: string; available: string };
+export type UpdatesState = { installed: boolean; apps: AppUpdate[]; checked_at: number; error: string | null };
 
 export type AudioApp = {
   key: string;
@@ -239,6 +246,16 @@ export const api = {
 
   getAutostart: () => invoke<boolean>("get_autostart"),
   setAutostart: (enabled: boolean) => invoke<void>("set_autostart", { enabled }),
+
+  aiChat: (id: number, messages: ChatMessage[]) => invoke<void>("ai_chat", { id, messages }),
+  aiStop: () => invoke<void>("ai_stop"),
+  aiKeyStatus: () => invoke<{ claude: boolean; gemini: boolean }>("ai_key_status"),
+  aiSetKey: (provider: string, key: string) => invoke<void>("ai_set_key", { provider, key }),
+  aiGeminiModels: () => invoke<string[]>("ai_gemini_models"),
+  getClipboardText: () => invoke<string | null>("get_clipboard_text"),
+
+  getAppUpdates: (refresh: boolean) => invoke<UpdatesState>("get_app_updates", { refresh }),
+  upgradeApp: (id: string) => invoke<void>("upgrade_app", { id }),
 
   checkUpdate: () => invoke<UpdateInfo | null>("check_update"),
   pendingUpdate: () => invoke<UpdateInfo | null>("pending_update"),

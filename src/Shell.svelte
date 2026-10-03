@@ -18,6 +18,7 @@
   import ProjectsPage from "./pages/ProjectsPage.svelte";
   import EnvPage from "./pages/EnvPage.svelte";
   import ContainersPage from "./pages/ContainersPage.svelte";
+  import UpdatesPage from "./pages/UpdatesPage.svelte";
 
   type Page =
     | "converter"
@@ -32,6 +33,7 @@
     | "projects"
     | "env"
     | "containers"
+    | "updates"
     | "settings";
 
   // Modules désactivés dans les réglages : retirés de la barre latérale.
@@ -136,6 +138,8 @@
             <EnvPage />
           {:else if page === "containers"}
             <ContainersPage />
+          {:else if page === "updates"}
+            <UpdatesPage />
           {:else}
             <SettingsPage />
           {/if}

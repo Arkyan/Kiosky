@@ -22,6 +22,7 @@
     { id: "battery", label: "Batterie", icon: "bolt" },
     { id: "ports", label: "Serveurs locaux", icon: "plug" },
     { id: "docker", label: "Conteneurs Docker", icon: "box" },
+    { id: "updates", label: "Mises à jour des applications", icon: "download" },
     { id: "media", label: "Musique en cours", icon: "volume" },
     { id: "volume", label: "Volume", icon: "volume" },
     { id: "mic", label: "Micro (voyant)", icon: "mic" },
@@ -63,6 +64,48 @@
   let recording = $state<ShortcutField | null>(null);
   let preview = $state("");
 
+  // ─── Assistant ───
+
+  const CLAUDE_MODELS = [
+    { id: "claude-opus-5-5", label: "Claude Opus 5.5 (le plus capable)" },
+    { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5 (plus rapide, moins cher)" },
+    { id: "claude-haiku-4-5", label: "Claude Haiku 4.5 (le plus rapide)" },
+  ];
+  const PROVIDERS = {
+    claude: { name: "Claude", url: "https://platform.claude.com/settings/keys", site: "platform.claude.com" },
+    gemini: { name: "Gemini", url: "https://aistudio.google.com/apikey", site: "aistudio.google.com" },
+  };
+
+  let aiKeys = $state<{ claude: boolean; gemini: boolean }>({ claude: false, gemini: false });
+  let keyDraft = $state("");
+  let keyError = $state("");
+  let geminiModels = $state<string[]>([]);
+  const provider = $derived(PROVIDERS[s.ai_provider] ?? PROVIDERS.claude);
+  const hasKey = $derived(aiKeys[s.ai_provider] ?? false);
+
+  async function loadAi() {
+    aiKeys = await api.aiKeyStatus();
+    if (aiKeys.gemini) geminiModels = await api.aiGeminiModels().catch(() => []);
+  }
+
+  async function saveKey(key: string) {
+    keyError = "";
+    try {
+      await api.aiSetKey(s.ai_provider, key);
+      keyDraft = "";
+      await loadAi();
+    } catch (e) {
+      keyError = String(e);
+    }
+  }
+
+  function setProvider(p: "claude" | "gemini") {
+    s.ai_provider = p;
+    keyDraft = "";
+    keyError = "";
+    saveSettings(0);
+  }
+
   // ─── Mises à jour ───
 
   let update = $state<UpdateInfo | null>(null);
@@ -97,6 +140,7 @@
 
   onMount(() => {
     api.getAutostart().then((v) => (autostart = v));
+    loadAi();
     api.pendingUpdate().then((u) => (update = u));
     const unFound = listen<UpdateInfo | null>("update-available", (e) => (update = e.payload));
     const unProgress = listen<{ done: number; total: number | null }>("update-progress", (e) => (progress = e.payload));
@@ -253,6 +297,7 @@
           <Icon name={w.icon} size={15} />
           <span class="grow">
             {w.label}
+            {#if w.id === "updates"}<span class="small muted"> · masqué quand tout est à jour</span>{/if}
             {#if w.id === "battery"}<span class="small muted"> · masquée sur un PC fixe</span>{/if}
             {#if w.id === "media"}<span class="small muted"> · Spotify, YouTube, VLC… avec pochette et ⏮ ⏯ ⏭</span>{/if}
             {#if w.id === "volume"}<span class="small muted"> · molette pour régler</span>{/if}
@@ -298,7 +343,77 @@
   {/each}
 </div>
 
-<h2>Mises à jour</h2>
+<h2>Assistant</h2>
+<p class="small muted intro">
+  Dans la palette : le bouton à gauche du champ, ou <span class="mono">? ta question</span>. Les questions sont envoyées à
+  {provider.name} avec ta propre clé API.
+</p>
+<div class="card group">
+  <div class="row">
+    <div class="ico"><Icon name="chat" size={18} /></div>
+    <div class="grow">
+      <div class="strong">Fournisseur</div>
+      <div class="small muted">Chacun a sa clé : tu peux enregistrer les deux et passer de l'un à l'autre.</div>
+    </div>
+    <div class="seg-ctrl">
+      <button class:active={s.ai_provider === "claude"} onclick={() => setProvider("claude")}>Claude</button>
+      <button class:active={s.ai_provider === "gemini"} onclick={() => setProvider("gemini")}>Gemini</button>
+    </div>
+  </div>
+  <div class="row">
+    <div class="ico"><Icon name="shield" size={18} /></div>
+    <div class="grow">
+      <div class="strong">Clé API {provider.name}</div>
+      <div class="small muted">
+        {#if hasKey}
+          Enregistrée et chiffrée par Windows sur ce PC. Elle n'est plus jamais affichée.
+        {:else}
+          À créer sur <button class="link" onclick={() => api.openUrl(provider.url)}>{provider.site}</button>, puis à coller ici.
+        {/if}
+      </div>
+      {#if keyError}<div class="small uerror">{keyError}</div>{/if}
+    </div>
+    {#if hasKey}
+      <button class="btn" onclick={() => saveKey("")}>Supprimer</button>
+    {:else}
+      <input
+        class="field key"
+        type="password"
+        placeholder="Colle la clé"
+        autocomplete="off"
+        spellcheck="false"
+        bind:value={keyDraft}
+        onkeydown={(e) => e.key === "Enter" && keyDraft.trim() && saveKey(keyDraft)}
+      />
+      <button class="btn primary" disabled={!keyDraft.trim()} onclick={() => saveKey(keyDraft)}>Enregistrer</button>
+    {/if}
+  </div>
+  <div class="row">
+    <div class="ico"><Icon name="sparkle" size={18} /></div>
+    <div class="grow">
+      <div class="strong">Modèle</div>
+      <div class="small muted">
+        {s.ai_provider === "claude"
+          ? "Les modèles plus légers répondent plus vite et coûtent moins cher."
+          : "La liste se remplit une fois la clé enregistrée."}
+      </div>
+    </div>
+    {#if s.ai_provider === "claude"}
+      <select class="field model" bind:value={s.ai_claude_model} onchange={() => saveSettings(0)}>
+        {#each CLAUDE_MODELS as m (m.id)}<option value={m.id}>{m.label}</option>{/each}
+      </select>
+    {:else if geminiModels.length}
+      <select class="field model" bind:value={s.ai_gemini_model} onchange={() => saveSettings(0)}>
+        {#if !geminiModels.includes(s.ai_gemini_model)}<option value={s.ai_gemini_model}>{s.ai_gemini_model}</option>{/if}
+        {#each geminiModels as m (m)}<option value={m}>{m}</option>{/each}
+      </select>
+    {:else}
+      <input class="field model" spellcheck="false" bind:value={s.ai_gemini_model} oninput={() => saveSettings()} />
+    {/if}
+  </div>
+</div>
+
+<h2>Mise à jour de Kiosky</h2>
 <div class="card group">
   <div class="row">
     <div class="ico"><Icon name="refresh" size={18} /></div>
@@ -368,6 +483,20 @@
   .uerror {
     margin-top: 4px;
     color: var(--bad);
+  }
+  .key {
+    width: 200px;
+  }
+  .model {
+    width: 290px;
+  }
+  .link {
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--accent);
+    cursor: pointer;
+    text-decoration: underline;
   }
   .intro {
     margin: -6px 0 10px;

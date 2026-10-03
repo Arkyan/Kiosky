@@ -3,7 +3,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import Icon from "./lib/Icon.svelte";
-  import { api, fmtBytes, type Gpu, type Sample, type Settings, type TopProcs } from "./lib/api";
+  import { api, fmtBytes, type AppUpdate, type Gpu, type Sample, type Settings, type TopProcs, type UpdatesState } from "./lib/api";
 
   // Barre flottante : fenêtre transparente qui s'ajuste à son contenu (Rust la place et l'affiche).
   // Clic sur un élément : son action. Survol : le détail en infobulle. Molette sur le volume : réglage.
@@ -22,6 +22,9 @@
   let volume = $state<{ volume: number; muted: boolean } | null>(null);
   let mic = $state<{ name: string; muted: boolean } | null>(null);
   let taskbarH = $state<number | null>(null);
+  let appUpdates = $state<AppUpdate[]>([]);
+  /** Mises à jour proposées : sans les applications ignorées */
+  const pendingApps = $derived(appUpdates.filter((a) => !settings?.updates_ignored.includes(a.id)));
   let bar: HTMLDivElement;
 
   /** Éléments cochés, dans l'ordre réglé */
@@ -38,6 +41,8 @@
     settings = await api.getSettings();
     taskbarH = await api.taskbarHeight();
     if (has("gpu") && !gpu) gpu = (await api.getMonitor()).gpu;
+    // Seulement ce qui a déjà été trouvé : la recherche elle-même tourne en arrière-plan.
+    if (has("updates")) api.getAppUpdates(false).then((u) => (appUpdates = u.apps)).catch(() => {});
     refreshSlow();
     refreshFast();
     refreshDocker();
@@ -90,7 +95,7 @@
   }
 
   $effect(() => {
-    void [sample, battery, devPorts, docker, media, volume, mic, items, vertical, onTaskbar];
+    void [sample, battery, devPorts, docker, media, volume, mic, items, vertical, onTaskbar, pendingApps];
     fit();
   });
 
@@ -109,6 +114,7 @@
       // Raccourci du micro : le voyant change aussitôt, sans attendre le prochain relevé.
       listen<boolean>("mic-changed", (e) => mic && (mic = { ...mic, muted: e.payload })),
       listen("settings-changed", loadSettings),
+      listen<UpdatesState>("app-updates", (e) => (appUpdates = e.payload.apps)),
     ];
     return () => {
       timers.forEach(clearInterval);
@@ -156,6 +162,8 @@
         return api.runAction("page:ports");
       case "docker":
         return api.runAction("page:containers");
+      case "updates":
+        return api.runAction("page:updates");
       case "battery":
         return api.runAction("uri:ms-settings:powersleep");
       case "media-toggle":
@@ -286,6 +294,11 @@
         : `Conteneurs en cours : ${docker.running} sur ${docker.total}` +
           (docker.names.length ? "\n" + docker.names.slice(0, 8).join("\n") : "") +
           "\n\nClic : ouvrir la page Conteneurs",
+    updates:
+      `${pendingApps.length} ${pendingApps.length > 1 ? "mises à jour disponibles" : "mise à jour disponible"}\n\n` +
+      pendingApps.slice(0, 8).map((a) => `${a.name}\t${a.available}`).join("\n") +
+      (pendingApps.length > 8 ? `\n… et ${pendingApps.length - 8} autres` : "") +
+      "\n\nClic : ouvrir la page Mises à jour",
     media: media
       ? `${media.title}${media.artist ? `\n${media.artist}` : ""}\n\n${media.app}\t${media.playing ? "en lecture" : "en pause"}\n\nClic sur le titre : ouvrir ${media.app}`
       : "Aucune lecture en cours\n\nLance Spotify, YouTube, VLC…",
@@ -354,6 +367,11 @@
       <span class="item click" data-act="docker" data-tip="docker">
         <Icon name="box" size={12} />
         <span class="val w-docker">{!docker ? "…" : docker.up ? `${docker.running}/${docker.total}` : "arrêté"}</span>
+      </span>
+    {:else if id === "updates" && pendingApps.length}
+      <span class="item click" data-act="updates" data-tip="updates">
+        <Icon name="download" size={12} />
+        <span class="val">{pendingApps.length}</span>
       </span>
     {:else if id === "media"}
       <span class="item media" class:paused={!media?.playing} class:empty={!media}>

@@ -11,7 +11,7 @@ const CREATE_NEW_CONSOLE: u32 = 0x10;
 
 /// Lance un programme et récupère sa sortie, avec un délai maximum
 /// (le CLI Docker peut rester bloqué pendant que le moteur démarre).
-fn run(program: &str, args: &[&str], timeout: Duration) -> Result<(bool, String, String), String> {
+pub(crate) fn run(program: &str, args: &[&str], timeout: Duration) -> Result<(bool, String, String), String> {
     let mut child = Command::new(program)
         .args(args)
         .env("WSL_UTF8", "1") // wsl.exe répond en UTF-8 au lieu d'UTF-16

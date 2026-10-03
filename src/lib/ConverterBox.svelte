@@ -2,9 +2,10 @@
   import { onMount, tick } from "svelte";
   import { listen } from "@tauri-apps/api/event";
   import { api, copyText, type ConvResult, type ShellOutput } from "./api";
+  import Chat from "./Chat.svelte";
   import Icon from "./Icon.svelte";
 
-  let { palette = false }: { palette?: boolean } = $props();
+  let { palette = false, chat = $bindable(false) }: { palette?: boolean; chat?: boolean } = $props();
 
   let query = $state("");
   let results = $state<ConvResult[]>([]);
@@ -24,6 +25,46 @@
   let running = $state("");
   let shellOut = $state<(ShellOutput & { cmd: string }) | null>(null);
   let outCopied = $state(false);
+
+  // ─── Assistant : le champ de la palette devient celui de la conversation ───
+
+  /** Source « Assistant » active dans Réglages → Palette */
+  let aiOn = $state(false);
+  let chatBox = $state<Chat>();
+  let chatBusy = $state(false);
+  let chatEmpty = $state(true);
+
+  async function loadAi() {
+    if (!palette) return;
+    aiOn = !(await api.getSettings()).palette_disabled.includes("ai");
+  }
+
+  async function openChat(question = "") {
+    chat = true;
+    query = "";
+    clearTimeout(timer);
+    await tick();
+    input?.focus();
+    await chatBox?.refresh();
+    if (question) ask(question);
+  }
+
+  function closeChat() {
+    chat = false;
+    query = "";
+    input?.focus();
+    loadHome();
+  }
+
+  function ask(question: string) {
+    chatBox?.send(question);
+    query = "";
+  }
+
+  function newChat() {
+    chatBox?.reset();
+    input?.focus();
+  }
 
   async function runShell(cmd: string) {
     running = cmd;
@@ -87,6 +128,24 @@
         loadHome();
         return;
       }
+      // « ? c'est quoi un commit » : la question part chez l'assistant, sans recherche.
+      if (aiOn && q.startsWith("?")) {
+        const question = q.slice(1).trim();
+        results = [
+          {
+            title: "Assistant",
+            value: question || "Ouvrir l'assistant",
+            hint: question ? "Entrée : poser la question" : "Tape ta question après le « ? »",
+            copy: "",
+            error: false,
+            action: `ai:${question}`,
+          },
+        ];
+        selected = 0;
+        home = false;
+        loading = false;
+        return;
+      }
       loading = true;
       try {
         const r = await api.convert(q);
@@ -124,6 +183,7 @@
       web: "globe",
       shell: "terminal",
       shellterm: "terminal",
+      ai: "chat",
     };
     return icons[verb(r)] ?? null;
   }
@@ -140,6 +200,10 @@
         return;
       }
       confirming = -1;
+      if (verb(r) === "ai") {
+        openChat(r.action.slice("ai:".length));
+        return;
+      }
       // « >ipconfig » : la sortie s'affiche dans la palette, qui reste ouverte.
       if (verb(r) === "shell") {
         runShell(r.action.slice("shell:".length));
@@ -161,6 +225,18 @@
   }
 
   async function onkeydown(e: KeyboardEvent) {
+    if (chat) {
+      // Conversation : Entrée envoie, Échap arrête la réponse puis revient à la recherche.
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (query.trim() && !chatBusy) ask(query);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        if (chatBusy) chatBox?.stop();
+        else closeChat();
+      }
+      return;
+    }
     if (shellOut || running) {
       // Panneau de sortie : Échap revient aux résultats, Entrée relance.
       if (e.key === "Escape") {
@@ -201,10 +277,13 @@
       query = "";
       results = [];
       confirming = -1;
+      chat = false; // la conversation reste disponible derrière le bouton
+      loadAi();
       await tick();
       input?.focus();
       loadHome();
     });
+    loadAi();
     loadHome();
     return () => {
       un.then((f) => f());
@@ -214,25 +293,52 @@
 
 <div class="box" class:palette>
   <div class="search">
-    <span class="icon" class:busy={loading}><Icon name={loading ? "refresh" : "search"} size={palette ? 20 : 18} /></span>
+    {#if chat}
+      <button class="btn ghost icon lead" title="Retour à la recherche (Échap)" onclick={closeChat}><Icon name="back" size={20} /></button>
+    {:else if aiOn}
+      <button class="btn ghost icon lead" class:busy={loading} title="Assistant : poser une question" onclick={() => openChat()}>
+        <Icon name={loading ? "refresh" : "chat"} size={20} />
+      </button>
+    {:else}
+      <span class="icon" class:busy={loading}><Icon name={loading ? "refresh" : "search"} size={palette ? 20 : 18} /></span>
+    {/if}
     <input
       bind:this={input}
       bind:value={query}
       oninput={() => {
+        if (chat) return;
         if (shellOut) closeShell();
         run();
       }}
       {onkeydown}
-      placeholder={palette ? "Application, projet, dossier, paramètre… ou 10 km en miles, 2^10" : "10 km en miles · 50 eur usd · 14h tokyo · 2^10 · kill 3000"}
+      placeholder={chat
+        ? "Pose ta question…"
+        : palette
+          ? "Application, projet, dossier, paramètre… ou 10 km en miles, 2^10"
+          : "10 km en miles · 50 eur usd · 14h tokyo · 2^10 · kill 3000"}
       spellcheck="false"
       autocomplete="off"
     />
-    {#if query}
+    {#if chat}
+      {#if chatBusy}
+        <button class="btn ghost icon clear" title="Arrêter la réponse (Échap)" onclick={() => chatBox?.stop()}><Icon name="stop" size={14} /></button>
+      {:else if query.trim()}
+        <button class="btn ghost icon clear send" title="Envoyer (Entrée)" onclick={() => ask(query)}><Icon name="send" size={15} /></button>
+      {:else if !chatEmpty}
+        <button class="btn ghost icon clear" title="Nouvelle conversation" onclick={newChat}><Icon name="trash" size={14} /></button>
+      {/if}
+    {:else if query}
       <button class="btn ghost icon clear" title="Effacer" onclick={() => setQuery("")}><Icon name="x" size={14} /></button>
     {/if}
   </div>
 
-  {#if running || shellOut}
+  {#if aiOn}
+    <!-- Toujours présente, seulement cachée : la conversation survit aux allers-retours avec la recherche. -->
+    <div class="chatwrap" class:off={!chat}><Chat bind:this={chatBox} bind:busy={chatBusy} bind:empty={chatEmpty} /></div>
+  {/if}
+  {#if chat}
+    <!-- la conversation occupe la place des résultats -->
+  {:else if running || shellOut}
     <div class="shell">
       <div class="shell-head">
         <span class="mono cmd">&gt; {shellOut?.cmd ?? running}</span>
@@ -349,6 +455,27 @@
   .icon {
     display: flex;
     color: var(--text-2);
+  }
+  .lead {
+    width: 34px;
+    height: 34px;
+    margin-left: -7px;
+    color: var(--accent);
+  }
+  .lead.busy :global(svg) {
+    animation: spin 0.9s linear infinite;
+  }
+  .send {
+    color: var(--accent);
+  }
+  .chatwrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .chatwrap.off {
+    display: none;
   }
   .icon.busy :global(svg) {
     animation: spin 0.9s linear infinite;

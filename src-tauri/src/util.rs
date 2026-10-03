@@ -111,6 +111,31 @@ pub fn set_clipboard(text: &str) -> Result<(), String> {
     }
 }
 
+/// Texte du presse-papiers Windows (None s'il contient autre chose : image, fichiers…).
+pub fn get_clipboard() -> Option<String> {
+    use windows::Win32::Foundation::{HGLOBAL, HWND};
+    use windows::Win32::System::DataExchange::{CloseClipboard, GetClipboardData, OpenClipboard};
+    use windows::Win32::System::Memory::{GlobalLock, GlobalUnlock};
+    const CF_UNICODETEXT: u32 = 13;
+    unsafe {
+        OpenClipboard(HWND::default()).ok()?;
+        let text = (|| {
+            let handle = GetClipboardData(CF_UNICODETEXT).ok()?;
+            let mem = HGLOBAL(handle.0);
+            let ptr = GlobalLock(mem) as *const u16;
+            if ptr.is_null() {
+                return None;
+            }
+            let len = (0..).take_while(|&i| *ptr.add(i) != 0).count();
+            let text = String::from_utf16_lossy(std::slice::from_raw_parts(ptr, len));
+            let _ = GlobalUnlock(mem);
+            Some(text)
+        })();
+        let _ = CloseClipboard();
+        text
+    }
+}
+
 /// Boîte de dialogue Windows « Choisir un dossier ». `owner` : HWND de la fenêtre parente.
 /// Renvoie None si l'utilisateur annule.
 pub fn pick_folder(owner: isize, title: &str) -> Result<Option<String>, String> {
