@@ -9,10 +9,12 @@ mod cleaner;
 mod colorpicker;
 mod containers;
 mod converter;
+mod devtools;
 mod envvars;
 mod expander;
 mod icons;
 mod launcher;
+mod locks;
 mod media;
 mod monitor;
 mod network;
@@ -782,6 +784,39 @@ async fn pick_folder(app: AppHandle) -> Result<Option<String>, String> {
     blocking(move || util::pick_folder(owner, "Dossier où chercher")).await
 }
 
+/// Fichier ou dossier à examiner dans la page « Fichiers bloqués ».
+#[tauri::command]
+async fn pick_lock_target(app: AppHandle, folder: bool) -> Result<Option<String>, String> {
+    let owner = app
+        .get_webview_window("main")
+        .and_then(|w| w.hwnd().ok())
+        .map(|h| h.0 as isize)
+        .unwrap_or(0);
+    blocking(move || {
+        if folder {
+            util::pick_folder(owner, "Dossier à examiner")
+        } else {
+            util::pick_file(owner, "Fichier à examiner")
+        }
+    })
+    .await
+}
+
+#[tauri::command]
+async fn check_locks(path: String) -> Result<locks::LockReport, String> {
+    blocking(move || locks::check(&path)).await
+}
+
+#[tauri::command]
+async fn get_devtools() -> Result<Vec<devtools::Tool>, String> {
+    blocking(|| Ok(devtools::list())).await
+}
+
+#[tauri::command]
+async fn get_devtool_updates() -> Result<Vec<devtools::ToolUpdate>, String> {
+    blocking(|| Ok(devtools::updates())).await
+}
+
 #[tauri::command]
 async fn get_ports() -> Result<Vec<ports::PortEntry>, String> {
     blocking(ports::list).await
@@ -1233,8 +1268,8 @@ async fn get_app_updates(app: AppHandle, refresh: bool) -> Result<apps::UpdatesS
 }
 
 #[tauri::command]
-async fn upgrade_app(app: AppHandle, id: String) -> Result<(), String> {
-    blocking(move || apps::upgrade(&id)).await?;
+async fn upgrade_app(app: AppHandle, id: String, reinstall: bool) -> Result<(), String> {
+    blocking(move || apps::upgrade(&id, reinstall)).await?;
     if let Some(state) = apps::cached() {
         let _ = app.emit("app-updates", &state);
     }
@@ -1511,6 +1546,10 @@ fn main() {
             find_folders,
             delete_folders,
             pick_folder,
+            pick_lock_target,
+            check_locks,
+            get_devtools,
+            get_devtool_updates,
             get_ports,
             kill_process,
             get_network,

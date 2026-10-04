@@ -139,6 +139,15 @@ pub fn get_clipboard() -> Option<String> {
 /// Boîte de dialogue Windows « Choisir un dossier ». `owner` : HWND de la fenêtre parente.
 /// Renvoie None si l'utilisateur annule.
 pub fn pick_folder(owner: isize, title: &str) -> Result<Option<String>, String> {
+    pick(owner, title, true)
+}
+
+/// La même, pour un fichier.
+pub fn pick_file(owner: isize, title: &str) -> Result<Option<String>, String> {
+    pick(owner, title, false)
+}
+
+fn pick(owner: isize, title: &str, folder: bool) -> Result<Option<String>, String> {
     use windows::core::HSTRING;
     use windows::Win32::Foundation::HWND;
     use windows::Win32::System::Com::{
@@ -154,7 +163,8 @@ pub fn pick_folder(owner: isize, title: &str) -> Result<Option<String>, String> 
         let dialog: IFileOpenDialog =
             CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).map_err(|e| e.to_string())?;
         let options = dialog.GetOptions().map_err(|e| e.to_string())?;
-        dialog.SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM).map_err(|e| e.to_string())?;
+        let wanted = if folder { FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM } else { FOS_FORCEFILESYSTEM };
+        dialog.SetOptions(options | wanted).map_err(|e| e.to_string())?;
         let _ = dialog.SetTitle(&HSTRING::from(title));
         match dialog.Show(HWND(owner as _)) {
             Ok(()) => {}

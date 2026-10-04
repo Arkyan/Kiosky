@@ -128,6 +128,27 @@ export type SpeedResult = { ping_ms: number; jitter_ms: number; down_mbps: numbe
 export type HostLine = { raw: string; entry: boolean; ip: string; names: string; comment: string; enabled: boolean };
 export type HostsState = { lines: HostLine[]; stamp: string; is_admin: boolean; undo: boolean; path: string };
 
+export type Locker = {
+  pid: number;
+  name: string;
+  app: string;
+  kind: "app" | "service" | "explorer" | "console" | "critical";
+  path: string;
+  system: boolean;
+  files: string[];
+};
+export type LockReport = { path: string; is_dir: boolean; files: number; truncated: boolean; lockers: Locker[] };
+export type DevTool = {
+  id: string;
+  name: string;
+  group: string;
+  installed: boolean;
+  version: string;
+  path: string;
+  others: string[];
+  winget: string[];
+};
+export type DevToolUpdate = { id: string; available: string; command: string };
 export type SshTunnel = { host: string; local_port: number; remote_host: string; remote_port: number };
 export type SshLine = { raw: string; key: string; value: string };
 export type SshBlock = { before: string[]; header: string; kind: "host" | "match" | "global"; patterns: string; lines: SshLine[] };
@@ -256,6 +277,11 @@ export const api = {
   sshTunnelStop: (id: string) => invoke<void>("ssh_tunnel_stop", { id }),
   sshTunnelsRunning: () => invoke<string[]>("ssh_tunnels_running"),
 
+  pickLockTarget: (folder: boolean) => invoke<string | null>("pick_lock_target", { folder }),
+  checkLocks: (path: string) => invoke<LockReport>("check_locks", { path }),
+  getDevtools: () => invoke<DevTool[]>("get_devtools"),
+  getDevtoolUpdates: () => invoke<DevToolUpdate[]>("get_devtool_updates"),
+
   getMonitor: () => invoke<MonitorState>("get_monitor"),
   killProcesses: (pids: number[]) => invoke<void>("kill_processes", { pids }),
   getOpeners: () => invoke<Opener[]>("get_openers"),
@@ -304,7 +330,7 @@ export const api = {
   getClipboardText: () => invoke<string | null>("get_clipboard_text"),
 
   getAppUpdates: (refresh: boolean) => invoke<UpdatesState>("get_app_updates", { refresh }),
-  upgradeApp: (id: string) => invoke<void>("upgrade_app", { id }),
+  upgradeApp: (id: string, reinstall = false) => invoke<void>("upgrade_app", { id, reinstall }),
 
   checkUpdate: () => invoke<UpdateInfo | null>("check_update"),
   pendingUpdate: () => invoke<UpdateInfo | null>("pending_update"),

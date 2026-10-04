@@ -15,6 +15,8 @@
   import PortsPage from "./pages/PortsPage.svelte";
   import NetworkPage from "./pages/NetworkPage.svelte";
   import SshPage from "./pages/SshPage.svelte";
+  import DevToolsPage from "./pages/DevToolsPage.svelte";
+  import LocksPage from "./pages/LocksPage.svelte";
   import MonitorPage from "./pages/MonitorPage.svelte";
   import FoldersPage from "./pages/FoldersPage.svelte";
   import ProjectsPage from "./pages/ProjectsPage.svelte";
@@ -33,6 +35,8 @@
     | "ports"
     | "network"
     | "ssh"
+    | "devtools"
+    | "locks"
     | "folders"
     | "projects"
     | "env"
@@ -136,6 +140,10 @@
             <NetworkPage />
           {:else if page === "ssh"}
             <SshPage />
+          {:else if page === "devtools"}
+            <DevToolsPage />
+          {:else if page === "locks"}
+            <LocksPage />
           {:else if page === "monitor"}
             <MonitorPage />
           {:else if page === "folders"}

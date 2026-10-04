@@ -94,26 +94,53 @@ pub fn check() -> UpdatesState {
     state
 }
 
+/// Erreur renvoyée quand la mise à jour demande de désinstaller d'abord : l'interface propose
+/// alors « Réinstaller » au lieu d'afficher la phrase de winget.
+pub const NEEDS_REINSTALL: &str = "reinstall";
+
+/// Code de winget : « une version plus récente existe, mais sa technologie d'installation est
+/// différente » (un programme passé du .exe au .msi, par exemple). Le texte, lui, est traduit.
+const TECHNOLOGY_MISMATCH: i32 = 0x8A15008Eu32 as i32;
+
+const QUIET: &[&str] = &["--exact", "--silent", "--accept-source-agreements", "--disable-interactivity"];
+
+fn winget(verb: &[&str], id: &str, extra: &[&str]) -> Result<(Option<i32>, String), String> {
+    let args: Vec<&str> = verb.iter().chain(&["--id", id]).chain(QUIET).chain(extra).copied().collect();
+    let (code, out, _) = crate::containers::run_code("winget", &args, Duration::from_secs(20 * 60))?;
+    Ok((code, out))
+}
+
 /// Met une application à jour, sans fenêtre d'installation. Windows peut demander une autorisation.
-pub fn upgrade(id: &str) -> Result<(), String> {
+/// Avec `reinstall`, l'ancienne version est désinstallée avant d'installer la nouvelle : la seule
+/// voie quand winget répond `NEEDS_REINSTALL`.
+pub fn upgrade(id: &str, reinstall: bool) -> Result<(), String> {
     if id.is_empty() || id.starts_with('-') {
         return Err("Identifiant invalide".into());
     }
-    let (ok, out, _) = crate::containers::run(
-        "winget",
-        &[
-            "upgrade",
-            "--id",
-            id,
-            "--exact",
-            "--silent",
-            "--accept-package-agreements",
-            "--accept-source-agreements",
-            "--disable-interactivity",
-        ],
-        Duration::from_secs(20 * 60),
-    )?;
-    if !ok {
+    let agree = ["--accept-package-agreements"];
+    let (mut code, mut out) = if reinstall {
+        winget(&["upgrade"], id, &["--accept-package-agreements", "--uninstall-previous"])?
+    } else {
+        winget(&["upgrade"], id, &agree)?
+    };
+    if code == Some(TECHNOLOGY_MISMATCH) {
+        if !reinstall {
+            return Err(NEEDS_REINSTALL.into());
+        }
+        // winget ne l'a pas fait de lui-même : on enchaîne les deux étapes.
+        let (removed, text) = winget(&["uninstall"], id, &[])?;
+        if removed != Some(0) {
+            return Err(format!("L'ancienne version n'a pas pu être désinstallée : {}", last_message(&text)));
+        }
+        (code, out) = winget(&["install"], id, &agree)?;
+        if code != Some(0) {
+            return Err(format!(
+                "L'ancienne version est désinstallée, mais la nouvelle ne s'est pas installée : {}",
+                last_message(&out)
+            ));
+        }
+    }
+    if code != Some(0) {
         return Err(last_message(&out));
     }
     if let Some(state) = CACHE.lock().unwrap().as_mut() {

@@ -12,6 +12,11 @@ const CREATE_NEW_CONSOLE: u32 = 0x10;
 /// Lance un programme et récupère sa sortie, avec un délai maximum
 /// (le CLI Docker peut rester bloqué pendant que le moteur démarre).
 pub(crate) fn run(program: &str, args: &[&str], timeout: Duration) -> Result<(bool, String, String), String> {
+    run_code(program, args, timeout).map(|(code, out, err)| (code == Some(0), out, err))
+}
+
+/// Comme `run`, avec le code de sortie du programme (None s'il a été interrompu).
+pub(crate) fn run_code(program: &str, args: &[&str], timeout: Duration) -> Result<(Option<i32>, String, String), String> {
     let mut child = Command::new(program)
         .args(args)
         .env("WSL_UTF8", "1") // wsl.exe répond en UTF-8 au lieu d'UTF-16
@@ -45,7 +50,7 @@ pub(crate) fn run(program: &str, args: &[&str], timeout: Duration) -> Result<(bo
         std::thread::sleep(Duration::from_millis(25));
     };
     let decode = |b: Vec<u8>| String::from_utf8_lossy(&b).replace('\0', "");
-    Ok((status.success(), decode(t_out.join().unwrap_or_default()), decode(t_err.join().unwrap_or_default())))
+    Ok((status.code(), decode(t_out.join().unwrap_or_default()), decode(t_err.join().unwrap_or_default())))
 }
 
 fn terminal(args: &[&str]) -> Result<(), String> {

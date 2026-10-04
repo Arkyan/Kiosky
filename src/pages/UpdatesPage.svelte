@@ -6,7 +6,10 @@
   import { api, type AppUpdate, type UpdatesState } from "../lib/api";
   import { store, saveSettings } from "../lib/settings.svelte";
 
-  type Status = { state: "wait" | "run" | "fail"; message?: string };
+  /** `reinstall` : winget demande de désinstaller l'ancienne version avant d'installer la nouvelle */
+  type Status = { state: "wait" | "run" | "fail"; message?: string; reinstall?: boolean };
+  let confirmReinstall = $state<string | null>(null);
+  let confirmTimer: ReturnType<typeof setTimeout> | undefined;
 
   let found = $state<UpdatesState | null>(null);
   let loading = $state(false);
@@ -50,7 +53,7 @@
   });
 
   /** Met à jour les applications une par une : winget n'en installe qu'une à la fois. */
-  async function run(list: AppUpdate[]) {
+  async function run(list: AppUpdate[], reinstall = false) {
     running = true;
     stopping = false;
     for (const a of list) status[a.id] = { state: "wait" };
@@ -58,17 +61,36 @@
       if (stopping) break;
       status[a.id] = { state: "run" };
       try {
-        await api.upgradeApp(a.id);
+        await api.upgradeApp(a.id, reinstall);
         delete status[a.id];
         done++;
       } catch (e) {
-        status[a.id] = { state: "fail", message: String(e) };
+        status[a.id] =
+          String(e) === "reinstall"
+            ? {
+                state: "fail",
+                reinstall: true,
+                message: "La nouvelle version s'installe autrement que celle en place : il faut désinstaller l'ancienne, puis installer la nouvelle.",
+              }
+            : { state: "fail", message: String(e) };
       }
     }
     // Arrêt demandé : celles qui attendaient encore retrouvent leur bouton.
     for (const a of list) if (status[a.id]?.state === "wait") delete status[a.id];
     running = false;
     stopping = false;
+  }
+
+  /** Désinstaller puis réinstaller : deux clics, les réglages de l'application peuvent y passer. */
+  function reinstall(a: AppUpdate) {
+    if (confirmReinstall !== a.id) {
+      confirmReinstall = a.id;
+      clearTimeout(confirmTimer);
+      confirmTimer = setTimeout(() => (confirmReinstall = null), 4000);
+      return;
+    }
+    confirmReinstall = null;
+    run([a], true);
   }
 
   function setIgnored(id: string, on: boolean) {
@@ -158,9 +180,21 @@
             <button class="btn ghost quiet" disabled={running} title="Ne plus proposer cette application" onclick={() => setIgnored(a.id, true)}>
               Ignorer
             </button>
-            <button class="btn" disabled={running} onclick={() => run([a])}>
-              {st?.state === "fail" ? "Réessayer" : "Mettre à jour"}
-            </button>
+            {#if st?.reinstall}
+              <button
+                class="btn"
+                class:danger={confirmReinstall === a.id}
+                disabled={running}
+                title="Désinstalle la version actuelle, puis installe la nouvelle. Certaines applications y perdent leurs réglages."
+                onclick={() => reinstall(a)}
+              >
+                {confirmReinstall === a.id ? "Désinstaller et réinstaller ?" : "Réinstaller"}
+              </button>
+            {:else}
+              <button class="btn" disabled={running} onclick={() => run([a])}>
+                {st?.state === "fail" ? "Réessayer" : "Mettre à jour"}
+              </button>
+            {/if}
           {/if}
         </div>
       </div>
@@ -280,6 +314,16 @@
     gap: 6px;
     padding-right: 10px;
     font-size: 12.5px;
+  }
+  .danger {
+    border-color: color-mix(in srgb, var(--bad) 45%, transparent);
+    background: color-mix(in srgb, var(--bad) 12%, transparent);
+    color: var(--bad);
+    font-weight: 600;
+  }
+  /* Après un échec, « Ignorer » reste visible : c'est souvent la bonne réponse. */
+  .app.fail .quiet {
+    opacity: 1;
   }
   .quiet {
     color: var(--text-2);

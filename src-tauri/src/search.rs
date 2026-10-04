@@ -161,6 +161,8 @@ const PAGES: &[(&str, &str, &str)] = &[
     ("startup", "Démarrage", "démarrage startup boot"),
     ("cleaner", "Nettoyage", "nettoyer temp cache node_modules espace"),
     ("ports", "Ports", "port réseau localhost"),
+    ("locks", "Fichiers bloqués", "fichier utilisé verrouillé impossible supprimer processus"),
+    ("devtools", "Outils dev", "versions node python rust git java installés"),
     ("ssh", "SSH", "serveurs clés config terminal distant"),
     ("network", "Réseau", "ip adresse dns hosts débit wifi internet speedtest"),
     ("projects", "Projets", "projets code git"),
