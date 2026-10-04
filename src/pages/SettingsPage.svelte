@@ -21,6 +21,7 @@
     { id: "date", label: "Date", icon: "clock" },
     { id: "battery", label: "Batterie", icon: "bolt" },
     { id: "ports", label: "Serveurs locaux", icon: "plug" },
+    { id: "tunnels", label: "Tunnels SSH ouverts", icon: "key" },
     { id: "docker", label: "Conteneurs Docker", icon: "box" },
     { id: "updates", label: "Mises à jour des applications", icon: "download" },
     { id: "media", label: "Musique en cours", icon: "volume" },

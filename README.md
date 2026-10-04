@@ -10,7 +10,7 @@ Rust + Tauri 2 pour la logique, Svelte 5 pour l'interface (style Windows 11, Mic
 | **Pipette** | Raccourci global (`Win+Shift+C` par défaut) : loupe sous la souris, clic = couleur copiée en HEX, RGB ou HSL, historique |
 | **Projets** | Détecte les projets (Git, Node, Rust, PHP, .NET, Android…), branche et modifications non commitées, ouverture dans l'éditeur adapté |
 | **Dossiers** | Un raccourci global par dossier favori (`Ctrl+Shift+1`…), ouvert dans l'Explorateur, le terminal ou un éditeur |
-| **SSH** | Serveurs du fichier `~/.ssh/config` : ajouter, modifier (adresse, utilisateur, port, clé, autres options), supprimer, se connecter dans un terminal ou ouvrir le serveur dans VS Code (extension Remote - SSH), annuler la dernière modification. Clés du dossier, avec copie de la clé publique |
+| **SSH** | Serveurs du fichier `~/.ssh/config` : ajouter, modifier (adresse, utilisateur, port, clé, autres options), supprimer, se connecter dans un terminal ou ouvrir le serveur dans VS Code (extension Remote - SSH), annuler la dernière modification, oublier l'empreinte d'un serveur réinstallé. Clés : création (ED25519), copie de la clé publique, envoi sur un serveur. Tunnels : un port du serveur amené sur `localhost`, ouverts et fermés d'un clic |
 | **Variables** | PATH et variables utilisateur/système : chemins introuvables et doublons signalés, réordonnancement, annulation de la dernière modification |
 | **Conteneurs** | Distributions WSL (terminal, fichiers, démarrer/arrêter, par défaut) et conteneurs Docker groupés par projet compose (démarrer, arrêter, journaux, terminal, ports), lancement de Docker Desktop |
 | **Volume** | Volume et sourdine par application avec vu-mètres en direct, sortie par application (Spotify sur les enceintes, Discord dans le casque), micro (volume, niveau, coupure par raccourci `Ctrl+Alt+M`), préréglages |
@@ -21,7 +21,7 @@ Rust + Tauri 2 pour la logique, Svelte 5 pour l'interface (style Windows 11, Mic
 | **Ports** | Qui écoute sur quel port (« le port 3000 est-il libre ? »), processus propriétaire, bouton pour l'arrêter. Les ports de Windows peuvent être masqués |
 | **Réseau** | Adresse locale et adresse publique (IPv4 et IPv6), cartes réseau (passerelle, DNS, MAC, débit de la liaison), test de débit (latence, descendant, montant), résolution d'un nom et vidage du cache DNS, fichier hosts (activer, désactiver, ajouter, annuler la dernière modification) |
 
-**Barre flottante** (Réglages → Barre flottante) : petite barre toujours visible, posée sur la barre des tâches (à gauche ou à droite) ou déplaçable, avec les éléments choisis : CPU, GPU, RAM, réseau, heure, date, batterie, serveurs locaux, conteneurs Docker, mises à jour disponibles, musique en cours (pochette, titre, ⏮ ⏯ ⏭), volume (molette), voyant du micro. Clic sur un élément : son action ; survol : le détail, toujours affiché au-dessus de la barre. Elle se cache quand une application est en plein écran.
+**Barre flottante** (Réglages → Barre flottante) : petite barre toujours visible, posée sur la barre des tâches (à gauche ou à droite) ou déplaçable, avec les éléments choisis : CPU, GPU, RAM, réseau, heure, date, batterie, serveurs locaux, tunnels SSH ouverts, conteneurs Docker, mises à jour disponibles, musique en cours (pochette, titre, ⏮ ⏯ ⏭), volume (molette), voyant du micro. Clic sur un élément : son action ; survol : le détail, toujours affiché au-dessus de la barre. Elle se cache quand une application est en plein écran.
 
 Chaque module peut être désactivé dans Réglages → Modules (il disparaît de l'interface et ne tourne plus en arrière-plan), et chaque source de la palette dans Réglages → Palette.
 
@@ -90,13 +90,13 @@ src-tauri/src/
   containers.rs          WSL (wsl.exe) et Docker (CLI docker)
   apps.rs                Mises à jour des applications (winget)
   ai.rs                  Assistant de la palette (API Claude et Gemini, clés chiffrées par Windows)
-  widget.rs              Barre flottante : placement sur la barre des tâches, premier plan, plein écran
+  widget.rs              Barre flottante : placement sur la barre des tâches, premier plan (événements Windows), plein écran
   launcher.rs            « Ouvrir avec » : Explorateur, terminal, VS Code, JetBrains…
   colorpicker.rs         Pipette : hook souris + capture d'écran (GDI)
   monitor.rs             CPU / GPU / RAM / réseau / disques
   cleaner.rs             Nettoyage (ne suit jamais les liens ni les jonctions)
   ports.rs               Tables TCP/UDP (IP Helper) et arrêt de processus
-  ssh.rs                 Fichier ~/.ssh/config (commentaires et mise en forme conservés), clés, connexion
+  ssh.rs                 Fichier ~/.ssh/config (commentaires et mise en forme conservés), clés, connexion, tunnels
   network.rs             Cartes réseau (IP Helper), adresse publique et test de débit (Cloudflare), DNS, fichier hosts
   startup.rs             Registre, dossiers Démarrage, tâches, journal de performances
   settings.rs            Réglages JSON dans %APPDATA%\com.kiosky.desktop
@@ -112,6 +112,7 @@ src-tauri/src/
   dernière modification est gardé dans `hosts-backup.txt`, à côté des réglages.
 - La page **SSH** ne lit jamais le contenu des clés privées (seulement leur première ligne, pour les reconnaître).
   Le fichier `config` d'avant la dernière modification est gardé dans `ssh-config-backup.txt`, à côté des réglages.
+  Une phrase secrète se choisit dans un terminal, jamais dans Kiosky. Les tunnels se ferment avec Kiosky.
 - Le nettoyage ignore les fichiers en cours d'utilisation, et ne touche aux fichiers temporaires
   qu'au-delà de 24 h. Ferme les navigateurs pour vider tout leur cache.
 - L'expanseur n'enregistre aucune frappe : seuls les 64 derniers caractères restent en mémoire pour la détection.

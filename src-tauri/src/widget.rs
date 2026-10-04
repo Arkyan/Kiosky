@@ -3,15 +3,18 @@
 
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
+use windows::Win32::UI::Accessibility::{SetWinEventHook, HWINEVENTHOOK};
 use std::time::Duration;
 use windows::core::w;
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
 use windows::Win32::UI::WindowsAndMessaging::{
-    FindWindowExW, FindWindowW, GetClassNameW, GetForegroundWindow, GetWindow, GetWindowLongPtrW, GetWindowRect,
-    IsWindowVisible, SetWindowLongPtrW, SetWindowPos, ShowWindowAsync, GWLP_HWNDPARENT, GWL_EXSTYLE, GW_HWNDPREV,
-    GW_OWNER, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_HIDE, SW_SHOWNOACTIVATE, WS_EX_TOPMOST,
+    DispatchMessageW, FindWindowExW, FindWindowW, GetClassNameW, GetForegroundWindow, GetMessageW, GetWindow,
+    GetWindowLongPtrW, GetWindowRect, IsWindowVisible, SetWindowLongPtrW, SetWindowPos, ShowWindowAsync,
+    EVENT_OBJECT_REORDER, EVENT_SYSTEM_FOREGROUND, GWLP_HWNDPARENT, GWL_EXSTYLE, GW_HWNDPREV, GW_OWNER, HWND_TOPMOST,
+    MSG, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_HIDE, SW_SHOWNOACTIVATE, WINEVENT_OUTOFCONTEXT,
+    WINEVENT_SKIPOWNPROCESS, WS_EX_TOPMOST,
 };
 
 /// Écart avec les bords de la barre des tâches, en pixels physiques
@@ -74,6 +77,7 @@ pub fn disable_animations(raw: isize) {
 }
 
 /// Rend `owned` toujours au-dessus de `owner` (l'infobulle au-dessus de la barre flottante).
+/// Seulement entre nos propres fenêtres : voir `detach`.
 pub fn set_owner(owned: isize, owner: isize) {
     unsafe {
         SetWindowLongPtrW(HWND(owned as _), GWLP_HWNDPARENT, owner);
@@ -115,8 +119,6 @@ pub fn keep_on_top(raw: isize) {
 
 /// Fenêtre de la barre flottante à garder au-dessus de la barre des tâches (0 : aucune).
 static GUARDED: AtomicIsize = AtomicIsize::new(0);
-/// La barre flottante doit-elle être rattachée à la barre des tâches (modes « taskbar-* ») ?
-static ATTACHED: AtomicBool = AtomicBool::new(false);
 
 /// Cachée parce qu'une application est en plein écran sur le même écran (réaffichée ensuite).
 static HIDDEN_FULLSCREEN: AtomicBool = AtomicBool::new(false);
@@ -132,20 +134,18 @@ pub fn hidden_fullscreen() -> bool {
     HIDDEN_FULLSCREEN.load(Ordering::Relaxed)
 }
 
-/// Rattache la fenêtre à la barre des tâches, ou l'en détache.
+/// S'assure que la fenêtre n'appartient à aucune autre.
 ///
-/// Une fenêtre « possédée » reste toujours au-dessus de sa propriétaire : quand Windows remonte
-/// la barre des tâches, il remonte la barre flottante dans le même mouvement, sans le moindre
-/// clignotement. Elle suit aussi la barre des tâches quand celle-ci s'efface (plein écran).
-pub fn attach(raw: isize, on: bool) {
-    ATTACHED.store(on, Ordering::Relaxed);
+/// La barre flottante a un temps été « possédée » par la barre des tâches, pour que Windows les
+/// remonte ensemble. Mais une fenêtre possédée par celle d'un autre programme partage avec lui
+/// sa file d'entrées, curseur compris : le pointeur disparaissait parfois au-dessus de la barre
+/// des tâches, et un blocage de Kiosky aurait figé l'Explorateur. On reste donc indépendants,
+/// et c'est `start_guard` qui nous garde devant.
+pub fn detach(raw: isize) {
     let own = HWND(raw as _);
-    let target = if on { unsafe { FindWindowW(w!("Shell_TrayWnd"), None).ok() } } else { None };
     unsafe {
-        let current = GetWindow(own, GW_OWNER).unwrap_or_default();
-        let wanted = target.unwrap_or_default();
-        if current != wanted {
-            SetWindowLongPtrW(own, GWLP_HWNDPARENT, wanted.0 as isize);
+        if !GetWindow(own, GW_OWNER).unwrap_or_default().0.is_null() {
+            SetWindowLongPtrW(own, GWLP_HWNDPARENT, 0);
         }
     }
 }
@@ -171,11 +171,43 @@ fn taskbar_above(own: HWND) -> bool {
     }
 }
 
+/// Repasse devant la barre des tâches si elle vient de nous recouvrir, sans prendre le focus.
+fn raise_if_covered() {
+    let raw = GUARDED.load(Ordering::Relaxed);
+    if raw == 0 || HIDDEN_FULLSCREEN.load(Ordering::Relaxed) {
+        return;
+    }
+    let own = HWND(raw as _);
+    if unsafe { IsWindowVisible(own) }.as_bool() && taskbar_above(own) {
+        keep_on_top(raw);
+    }
+}
+
+unsafe extern "system" fn on_reorder(_: HWINEVENTHOOK, _: u32, _: HWND, _: i32, _: i32, _: u32, _: u32) {
+    raise_if_covered();
+}
+
+/// Windows signale chaque changement d'ordre des fenêtres : on repasse devant aussitôt, avant
+/// que le recouvrement ne se voie. Il faut une boucle de messages sur le fil qui écoute.
+fn watch_reorders() {
+    std::thread::spawn(|| unsafe {
+        let flags = WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS;
+        let _ = SetWinEventHook(EVENT_OBJECT_REORDER, EVENT_OBJECT_REORDER, None, Some(on_reorder), 0, 0, flags);
+        let _ = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, None, Some(on_reorder), 0, 0, flags);
+        let mut msg = MSG::default();
+        while GetMessageW(&mut msg, HWND::default(), 0, 0).as_bool() {
+            DispatchMessageW(&msg);
+        }
+    });
+}
+
 /// Gardien : Windows remonte la barre des tâches à chaque clic sur une appli ou sur la barre
-/// elle-même. Toutes les 40 ms, si elle nous recouvre, on repasse devant, sans prendre le focus.
+/// elle-même. On repasse devant dès que Windows signale le changement (`watch_reorders`) ; ce
+/// relevé toutes les 40 ms gère le plein écran et sert de filet de sécurité.
 /// On ne réagit qu'à la barre des tâches : pas de bras de fer avec le menu Démarrer ou une autre
 /// fenêtre « toujours au premier plan ».
 pub fn start_guard() {
+    watch_reorders();
     std::thread::spawn(|| loop {
         std::thread::sleep(Duration::from_millis(40));
         let raw = GUARDED.load(Ordering::Relaxed);
@@ -201,13 +233,6 @@ pub fn start_guard() {
             }
             if !IsWindowVisible(own).as_bool() {
                 continue;
-            }
-            // Explorateur redémarré : nouvelle barre des tâches, on s'y rattache.
-            if ATTACHED.load(Ordering::Relaxed) {
-                let tb = FindWindowW(w!("Shell_TrayWnd"), None).unwrap_or_default();
-                if !tb.0.is_null() && GetWindow(own, GW_OWNER).unwrap_or_default() != tb {
-                    attach(raw, true);
-                }
             }
             // Filet de sécurité : statut « toujours au premier plan » perdu, ou recouverte malgré tout.
             let lost_topmost = GetWindowLongPtrW(own, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST.0 == 0;

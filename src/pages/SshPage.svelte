@@ -2,7 +2,9 @@
   import { onMount } from "svelte";
   import Icon from "../lib/Icon.svelte";
   import PageHeader from "../lib/PageHeader.svelte";
-  import { api, copyText, type SshBlock, type SshLine, type SshState } from "../lib/api";
+  import Toggle from "../lib/Toggle.svelte";
+  import { api, copyText, type SshBlock, type SshLine, type SshState, type SshTunnel } from "../lib/api";
+  import { store, saveSettings } from "../lib/settings.svelte";
 
   /** Options qui ont leur propre champ ; les autres sont listées en dessous. */
   const KNOWN = ["HostName", "User", "Port", "IdentityFile"] as const;
@@ -34,14 +36,24 @@
     }
   }
 
-  onMount(load);
+  onMount(() => {
+    load();
+    refreshTunnels();
+    const timer = setInterval(refreshTunnels, 3000);
+    // Une clé créée dans le terminal apparaît au retour dans Kiosky.
+    window.addEventListener("focus", load);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", load);
+    };
+  });
 
   let infoTimer: ReturnType<typeof setTimeout> | undefined;
-  function flash(text: string) {
+  function flash(text: string, ms = 3000) {
     info = text;
     error = "";
     clearTimeout(infoTimer);
-    infoTimer = setTimeout(() => (info = ""), 3000);
+    infoTimer = setTimeout(() => (info = ""), ms);
   }
 
   async function copy(text: string, what: string) {
@@ -165,6 +177,115 @@
     write(blocks, `${gone.patterns} supprimé.`);
   }
 
+  async function forget(alias: string) {
+    try {
+      flash(await api.sshForget(alias), 6000);
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  // ─── Clés ───
+
+  /** Serveurs auxquels on peut se connecter par leur nom. */
+  const aliases = $derived(servers.filter((s) => s.block.kind === "host").flatMap((s) => s.block.patterns.split(/\s+/).filter(plain)));
+
+  let keyForm = $state<{ name: string; comment: string; passphrase: boolean } | null>(null);
+  let sending = $state<string | null>(null);
+  let sendTo = $state("");
+
+  function newKey() {
+    const taken = ssh?.keys.some((k) => k.name === "id_ed25519");
+    keyForm = { name: taken ? "" : "id_ed25519", comment: "", passphrase: false };
+  }
+
+  async function createKey() {
+    if (!keyForm) return;
+    const { name, comment, passphrase } = keyForm;
+    try {
+      await api.sshKeygen(name, comment, passphrase);
+      flash(passphrase ? "Choisis la phrase secrète dans le terminal : la clé apparaîtra ici ensuite." : `Clé ${name.trim()} créée.`, 6000);
+      keyForm = null;
+    } catch (e) {
+      error = String(e);
+    }
+    await load();
+  }
+
+  async function send(key: string) {
+    try {
+      await api.sshSendKey(key, sendTo);
+      flash(`Un terminal s'est ouvert : ${sendTo} va demander son mot de passe une dernière fois.`, 6000);
+      sending = null;
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  // ─── Tunnels ───
+
+  const tunnels = $derived(store.s?.ssh_tunnels ?? []);
+  const tid = (t: SshTunnel) => `${t.host}:${t.local_port}:${t.remote_host}:${t.remote_port}`;
+  let running = $state<string[]>([]);
+  let pending = $state<string | null>(null);
+  let draftTunnel = $state({ host: "", remote: "", remoteHost: "", local: "" });
+
+  // Le serveur proposé par défaut : le premier, tant que rien d'autre n'est choisi.
+  $effect(() => {
+    if (aliases.length && !aliases.includes(draftTunnel.host)) draftTunnel.host = aliases[0];
+  });
+
+  async function refreshTunnels() {
+    running = await api.sshTunnelsRunning().catch(() => []);
+  }
+
+  async function toggleTunnel(t: SshTunnel, on: boolean) {
+    const id = tid(t);
+    error = "";
+    if (on) {
+      pending = id;
+      try {
+        await api.sshTunnelStart(t);
+      } catch (e) {
+        error = `Tunnel vers ${t.host} : ${e}`;
+      }
+      pending = null;
+    } else {
+      await api.sshTunnelStop(id).catch(() => {});
+    }
+    await refreshTunnels();
+  }
+
+  const validPort = (n: number) => Number.isInteger(n) && n > 0 && n < 65536;
+
+  function addTunnel() {
+    if (!store.s) return;
+    const remote_port = Number(draftTunnel.remote);
+    const local_port = draftTunnel.local.trim() ? Number(draftTunnel.local) : remote_port;
+    const host = draftTunnel.host || aliases[0];
+    if (!host || !validPort(remote_port) || !validPort(local_port)) {
+      error = "Tunnel incomplet : il faut un serveur et un port entre 1 et 65535.";
+      return;
+    }
+    const t = { host, local_port, remote_host: draftTunnel.remoteHost.trim() || "localhost", remote_port };
+    if (tunnels.some((x) => tid(x) === tid(t))) {
+      error = "Ce tunnel existe déjà.";
+      return;
+    }
+    store.s.ssh_tunnels = [...tunnels, t];
+    saveSettings(0);
+    draftTunnel = { host, remote: "", remoteHost: "", local: "" };
+    error = "";
+  }
+
+  async function removeTunnel(t: SshTunnel) {
+    if (!store.s) return;
+    await api.sshTunnelStop(tid(t)).catch(() => {});
+    store.s.ssh_tunnels = tunnels.filter((x) => tid(x) !== tid(t));
+    saveSettings(0);
+    refreshTunnels();
+  }
+
   async function undo() {
     try {
       await api.undoSsh();
@@ -226,6 +347,19 @@
       <button class="btn ghost small-btn" type="button" onclick={() => d.extras.push({ key: "", value: "", line: null })}>
         <Icon name="plus" size={13} /> Option (ForwardAgent, ProxyJump…)
       </button>
+      {#if d.index !== null && ssh?.blocks[d.index].kind === "host"}
+        {@const alias = ssh.blocks[d.index].patterns.split(/\s+/).find(plain)}
+        {#if alias}
+          <button
+            class="btn ghost small-btn"
+            type="button"
+            onclick={() => forget(alias)}
+            title="Serveur réinstallé ? SSH refuse de s'y connecter tant que l'ancienne empreinte est dans known_hosts"
+          >
+            <Icon name="shield" size={13} /> Oublier l'empreinte
+          </button>
+        {/if}
+      {/if}
       <span class="grow"></span>
       <button class="btn ghost" type="button" onclick={() => (draft = null)}>Annuler</button>
       <button class="btn primary" type="submit" disabled={saving || (!global && !d.patterns.trim())}>Enregistrer</button>
@@ -323,10 +457,43 @@
   <div class="khead">
     <h2>Clés <span class="muted small">· {ssh.keys.length}</span></h2>
     <span class="grow"></span>
+    <button class="btn ghost small-btn" onclick={newKey}><Icon name="plus" size={14} /> Nouvelle clé</button>
     <button class="btn ghost small-btn" onclick={() => api.openWith("explorer", ssh!.dir).catch((e) => (error = String(e)))}>
       <Icon name="folder" size={14} /> Ouvrir le dossier
     </button>
   </div>
+  {#if keyForm}
+    <form
+      class="card new editor"
+      onsubmit={(e) => {
+        e.preventDefault();
+        createKey();
+      }}
+    >
+      <div class="etitle strong">Nouvelle clé (ED25519)</div>
+      <div class="grid">
+        <label>
+          <span class="small muted">Nom du fichier</span>
+          <!-- svelte-ignore a11y_autofocus -->
+          <input class="field mono" bind:value={keyForm.name} placeholder="id_ed25519" spellcheck="false" autofocus />
+        </label>
+        <label>
+          <span class="small muted">Commentaire (pour la reconnaître sur les serveurs)</span>
+          <input class="field mono" bind:value={keyForm.comment} placeholder="moi@mon-pc" spellcheck="false" />
+        </label>
+      </div>
+      <div class="ebar">
+        <Toggle checked={keyForm.passphrase} label="Protéger par une phrase secrète" onchange={(v) => keyForm && (keyForm.passphrase = v)} />
+        <span class="small muted grow">
+          {keyForm.passphrase
+            ? "Phrase secrète : tu la choisis dans un terminal, Kiosky ne la voit pas."
+            : "Sans phrase secrète : utilisable sans saisie (tunnels, scripts)."}
+        </span>
+        <button class="btn ghost" type="button" onclick={() => (keyForm = null)}>Annuler</button>
+        <button class="btn primary" type="submit" disabled={!keyForm.name.trim()}>Créer</button>
+      </div>
+    </form>
+  {/if}
   <div class="card list">
     {#each ssh.keys as k (k.name)}
       <div class="srow">
@@ -338,7 +505,25 @@
           {#if !k.public}Clé privée sans fichier .pub{:else if !k.has_private}Clé publique seule : la clé privée n'est pas dans le dossier{:else}{k.comment}{/if}
         </div>
         <div class="sact">
-          {#if k.public}
+          {#if k.public && sending === k.name}
+            <select class="field pick" bind:value={sendTo}>
+              {#each aliases as a}<option value={a}>{a}</option>{/each}
+            </select>
+            <button class="btn primary small-btn" onclick={() => send(k.name)}>Envoyer</button>
+            <button class="btn ghost icon" title="Annuler" onclick={() => (sending = null)}><Icon name="x" size={14} /></button>
+          {:else if k.public}
+            {#if aliases.length}
+              <button
+                class="btn ghost small-btn"
+                title="Ajoute cette clé aux clés autorisées d'un serveur : plus de mot de passe ensuite"
+                onclick={() => {
+                  sending = k.name;
+                  sendTo = aliases.includes(sendTo) ? sendTo : aliases[0];
+                }}
+              >
+                <Icon name="send" size={14} /> Envoyer sur un serveur
+              </button>
+            {/if}
             <button class="btn ghost small-btn" onclick={() => copy(k.public!, "Clé publique")} title="À coller dans authorized_keys sur le serveur, ou sur GitHub">
               <Icon name="copy" size={14} /> Copier la clé publique
             </button>
@@ -349,6 +534,57 @@
     {#if !ssh.keys.length}
       <div class="empty muted">Aucune clé dans {ssh.dir}.</div>
     {/if}
+  </div>
+
+  <h2>Tunnels <span class="muted small">· {tunnels.length}</span></h2>
+  <div class="card list">
+    {#each tunnels as t (tid(t))}
+      {@const id = tid(t)}
+      {@const on = running.includes(id)}
+      <div class="srow">
+        <Toggle checked={on || pending === id} disabled={pending !== null} label={`Tunnel vers ${t.host}`} onchange={(v) => toggleTunnel(t, v)} />
+        <div class="sname">
+          <button class="link strong mono" title="Copier" onclick={() => copy(`localhost:${t.local_port}`, `localhost:${t.local_port}`)}>
+            localhost:{t.local_port}
+          </button>
+          {#if pending === id}<span class="badge">connexion…</span>{:else if on}<span class="badge ok">ouvert</span>{/if}
+        </div>
+        <div class="starget small muted mono" title={`${t.remote_host}:${t.remote_port} vu depuis ${t.host}`}>
+          → {t.host} → {t.remote_host}:{t.remote_port}
+        </div>
+        <div class="sact">
+          {#if on}
+            <button class="btn ghost small-btn connect" onclick={() => api.openUrl(`http://localhost:${t.local_port}`).catch((e) => (error = String(e)))}>
+              <Icon name="globe" size={13} /> Ouvrir
+            </button>
+          {/if}
+          <button class="btn ghost del" title="Supprimer" onclick={() => removeTunnel(t)}><Icon name="trash" size={14} /></button>
+        </div>
+      </div>
+    {/each}
+    {#if aliases.length}
+      <form
+        class="tform"
+        onsubmit={(e) => {
+          e.preventDefault();
+          addTunnel();
+        }}
+      >
+        <select class="field pick" bind:value={draftTunnel.host}>
+          {#each aliases as a}<option value={a}>{a}</option>{/each}
+        </select>
+        <input class="field mono tport" bind:value={draftTunnel.remote} placeholder="Port distant" inputmode="numeric" spellcheck="false" />
+        <input class="field mono grow" bind:value={draftTunnel.remoteHost} placeholder="Adresse vue du serveur (localhost)" spellcheck="false" />
+        <input class="field mono tport" bind:value={draftTunnel.local} placeholder="Port local" inputmode="numeric" spellcheck="false" />
+        <button class="btn" type="submit" disabled={!draftTunnel.remote.trim()}><Icon name="plus" size={14} /> Ajouter</button>
+      </form>
+    {:else}
+      <div class="empty muted">Ajoute d'abord un serveur : un tunnel passe par lui.</div>
+    {/if}
+  </div>
+  <div class="small muted note">
+    Un tunnel amène un port du serveur sur ce PC : une base de données ou un site qui n'écoute que là-bas devient joignable sur
+    <span class="mono">localhost</span>. Il tourne en arrière-plan, donc avec une clé utilisable sans saisie, et se ferme avec Kiosky.
   </div>
   <div class="small muted path mono">{ssh.dir}\config</div>
 {/if}
@@ -524,6 +760,50 @@
     align-items: center;
     gap: 6px;
     margin-top: 12px;
+  }
+
+  .pick {
+    height: 28px;
+    padding: 0 8px;
+    font-size: 12.5px;
+  }
+  .link {
+    padding: 1px 5px;
+    margin: 0 -5px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .link:hover {
+    background: var(--fill-press);
+    color: var(--accent);
+  }
+  .tform {
+    display: flex;
+    gap: 6px;
+    padding: 10px 12px;
+  }
+  .tform .field {
+    height: 32px;
+    min-width: 0;
+    font-size: 12.5px;
+  }
+  .tform .pick {
+    flex: none;
+    max-width: 180px;
+  }
+  .tport {
+    flex: none;
+    width: 110px;
+  }
+  .note {
+    margin: 8px 4px 0;
+    line-height: 1.5;
+  }
+  form.new {
+    margin-bottom: 12px;
   }
 
   .khead {

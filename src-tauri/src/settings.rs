@@ -95,6 +95,8 @@ pub struct Settings {
     pub ai_provider: String,
     pub ai_claude_model: String,
     pub ai_gemini_model: String,
+    /// Tunnels SSH enregistrés (page SSH), ouverts à la demande
+    pub ssh_tunnels: Vec<crate::ssh::Tunnel>,
 }
 
 impl Settings {
@@ -152,7 +154,7 @@ impl Default for Settings {
             palette_disabled: vec![],
             widget_enabled: false,
             widget_items: ["cpu", "ram", "net", "time"].iter().map(|s| s.to_string()).collect(),
-            widget_order: ["cpu", "gpu", "ram", "net", "time", "date", "battery", "ports", "docker", "updates", "media", "volume", "mic"].iter().map(|s| s.to_string()).collect(),
+            widget_order: ["cpu", "gpu", "ram", "net", "time", "date", "battery", "ports", "tunnels", "docker", "updates", "media", "volume", "mic"].iter().map(|s| s.to_string()).collect(),
             widget_mode: "taskbar-left".into(),
             widget_pos: None,
             widget_vertical: false,
@@ -162,6 +164,7 @@ impl Default for Settings {
             ai_provider: "claude".into(),
             ai_claude_model: "claude-opus-5-5".into(),
             ai_gemini_model: "gemini-flash-latest".into(),
+            ssh_tunnels: vec![],
         }
     }
 }

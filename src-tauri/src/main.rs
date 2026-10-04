@@ -336,8 +336,7 @@ fn fit_widget(app: AppHandle, state: State<'_, AppState>, width: f64, height: f6
         let _ = w.show();
     }
     if let Some(raw) = widget_raw(&app) {
-        // Sur la barre des tâches : rattachée à elle, donc jamais recouverte.
-        widget::attach(raw, s.widget_mode != "free");
+        widget::detach(raw);
         widget::keep_on_top(raw);
         widget::guard(Some(raw));
     }
@@ -865,6 +864,40 @@ async fn undo_ssh(state: State<'_, AppState>) -> Result<(), String> {
 #[tauri::command]
 async fn ssh_connect(alias: String, vscode: bool) -> Result<(), String> {
     blocking(move || ssh::connect(&alias, vscode)).await
+}
+
+#[tauri::command]
+async fn ssh_keygen(name: String, comment: String, passphrase: bool) -> Result<(), String> {
+    blocking(move || ssh::keygen(&name, &comment, passphrase)).await
+}
+
+#[tauri::command]
+async fn ssh_send_key(key: String, alias: String) -> Result<(), String> {
+    blocking(move || ssh::send_key(&key, &alias)).await
+}
+
+#[tauri::command]
+async fn ssh_forget(alias: String) -> Result<String, String> {
+    blocking(move || ssh::forget(&alias)).await
+}
+
+#[tauri::command]
+async fn ssh_tunnel_start(tunnel: ssh::Tunnel) -> Result<(), String> {
+    blocking(move || ssh::tunnel_start(&tunnel)).await
+}
+
+#[tauri::command]
+async fn ssh_tunnel_stop(id: String) -> Result<(), String> {
+    blocking(move || {
+        ssh::tunnel_stop(&id);
+        Ok(())
+    })
+    .await
+}
+
+#[tauri::command]
+fn ssh_tunnels_running() -> Vec<String> {
+    ssh::tunnels_running()
 }
 
 #[tauri::command]
@@ -1493,6 +1526,12 @@ fn main() {
             save_ssh,
             undo_ssh,
             ssh_connect,
+            ssh_keygen,
+            ssh_send_key,
+            ssh_forget,
+            ssh_tunnel_start,
+            ssh_tunnel_stop,
+            ssh_tunnels_running,
             get_monitor,
             kill_processes,
             open_url,
@@ -1547,8 +1586,12 @@ fn main() {
         .run(|_app, event| {
             // Plus aucune fenêtre ouverte : on reste dans la zone de notification. « Quitter » passe
             // par app.exit(0), qui fournit un code de sortie et n'est donc pas bloqué ici.
-            if let RunEvent::ExitRequested { api, code: None, .. } = event {
+            if let RunEvent::ExitRequested { api, code: None, .. } = &event {
                 api.prevent_exit();
+            }
+            // Aucun tunnel SSH ne doit survivre à Kiosky.
+            if let RunEvent::Exit = event {
+                ssh::stop_all();
             }
         });
 }

@@ -17,6 +17,8 @@
   let now = $state(new Date());
   let battery = $state<{ present: boolean; percent: number; charging: boolean } | null>(null);
   let devPorts = $state<{ port: number; process: string }[]>([]);
+  /** Tunnels SSH ouverts : « serveur:port local:destination:port » */
+  let tunnels = $state<string[]>([]);
   let docker = $state<{ running: number; total: number; up: boolean; names: string[] } | null>(null);
   let media = $state<Media | null>(null);
   let volume = $state<{ volume: number; muted: boolean } | null>(null);
@@ -66,6 +68,7 @@
       for (const p of list) if (p.proto === "TCP" && p.listening && !p.system && !seen.has(p.local_port)) seen.set(p.local_port, p.process);
       devPorts = [...seen.entries()].sort((a, b) => a[0] - b[0]).map(([port, process]) => ({ port, process }));
     }
+    if (has("tunnels")) tunnels = await api.sshTunnelsRunning().catch(() => []);
   }
 
   async function refreshDocker() {
@@ -95,7 +98,7 @@
   }
 
   $effect(() => {
-    void [sample, battery, devPorts, docker, media, volume, mic, items, vertical, onTaskbar, pendingApps];
+    void [sample, battery, devPorts, tunnels, docker, media, volume, mic, items, vertical, onTaskbar, pendingApps];
     fit();
   });
 
@@ -160,6 +163,8 @@
         return api.runAction("page:monitor");
       case "ports":
         return api.runAction("page:ports");
+      case "tunnels":
+        return api.runAction("page:ssh");
       case "docker":
         return api.runAction("page:containers");
       case "updates":
@@ -287,6 +292,12 @@
     ports: devPorts.length
       ? `Serveurs locaux :\n${devPorts.map((p) => `${p.port}\t${strip(p.process)}`).join("\n")}\n\nClic : ouvrir la page Ports`
       : "Aucun serveur local en écoute\n\nClic : ouvrir la page Ports",
+    tunnels: tunnels.length
+      ? `Tunnels SSH ouverts :\n${tunnels
+          .map((t) => t.split(":"))
+          .map(([host, local, rhost, rport]) => `localhost:${local}\t${host} → ${rhost}:${rport}`)
+          .join("\n")}\n\nClic : ouvrir la page SSH`
+      : "Aucun tunnel SSH ouvert\n\nClic : ouvrir la page SSH",
     docker: !docker
       ? "Docker"
       : !docker.up
@@ -362,6 +373,11 @@
       <span class="item click" data-act="ports" data-tip="ports">
         <Icon name="plug" size={12} />
         <span class="val w-ports">{devPorts.length ? devPorts.map((p) => p.port).join(" · ") : "aucun"}</span>
+      </span>
+    {:else if id === "tunnels"}
+      <span class="item click" data-act="tunnels" data-tip="tunnels">
+        <Icon name="key" size={12} />
+        <span class="val">{tunnels.length ? tunnels.map((t) => t.split(":")[1]).join(" · ") : "aucun"}</span>
       </span>
     {:else if id === "docker"}
       <span class="item click" data-act="docker" data-tip="docker">

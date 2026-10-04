@@ -38,6 +38,7 @@ export type Settings = {
   project_roots: string[];
   project_favorites: string[];
   project_opened: Record<string, number>;
+  ssh_tunnels: SshTunnel[];
 };
 export type Project = {
   name: string;
@@ -127,6 +128,7 @@ export type SpeedResult = { ping_ms: number; jitter_ms: number; down_mbps: numbe
 export type HostLine = { raw: string; entry: boolean; ip: string; names: string; comment: string; enabled: boolean };
 export type HostsState = { lines: HostLine[]; stamp: string; is_admin: boolean; undo: boolean; path: string };
 
+export type SshTunnel = { host: string; local_port: number; remote_host: string; remote_port: number };
 export type SshLine = { raw: string; key: string; value: string };
 export type SshBlock = { before: string[]; header: string; kind: "host" | "match" | "global"; patterns: string; lines: SshLine[] };
 export type SshKey = { name: string; path: string; kind: string; comment: string; public: string | null; has_private: boolean };
@@ -246,6 +248,13 @@ export const api = {
   saveSsh: (blocks: SshBlock[], stamp: string) => invoke<void>("save_ssh", { blocks, stamp }),
   undoSsh: () => invoke<void>("undo_ssh"),
   sshConnect: (alias: string, vscode = false) => invoke<void>("ssh_connect", { alias, vscode }),
+
+  sshKeygen: (name: string, comment: string, passphrase: boolean) => invoke<void>("ssh_keygen", { name, comment, passphrase }),
+  sshSendKey: (key: string, alias: string) => invoke<void>("ssh_send_key", { key, alias }),
+  sshForget: (alias: string) => invoke<string>("ssh_forget", { alias }),
+  sshTunnelStart: (tunnel: SshTunnel) => invoke<void>("ssh_tunnel_start", { tunnel }),
+  sshTunnelStop: (id: string) => invoke<void>("ssh_tunnel_stop", { id }),
+  sshTunnelsRunning: () => invoke<string[]>("ssh_tunnels_running"),
 
   getMonitor: () => invoke<MonitorState>("get_monitor"),
   killProcesses: (pids: number[]) => invoke<void>("kill_processes", { pids }),

@@ -1,10 +1,15 @@
 //! Serveurs SSH : lecture et écriture de `~/.ssh/config` (mise en forme et commentaires conservés,
 //! sauvegarde avant chaque écriture), clés présentes dans le dossier, connexion dans un terminal.
 
+use crate::util::{ps_quote, CREATE_NO_WINDOW};
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 use std::io::Read;
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use std::sync::Mutex;
+use std::time::Duration;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SshLine {
@@ -331,13 +336,237 @@ pub fn hosts() -> Vec<(String, String)> {
 /// Ouvre un terminal sur « ssh alias », ou VS Code connecté au serveur.
 /// Seuls les serveurs du fichier sont acceptés.
 pub fn connect(alias: &str, vscode: bool) -> Result<(), String> {
-    if !plain_alias(alias) || !hosts().iter().any(|(a, _)| a == alias) {
-        return Err(format!("« {alias} » n'est pas un serveur du fichier de configuration SSH."));
-    }
+    known_host(alias)?;
     if vscode {
         crate::launcher::open_vscode_remote(alias)
     } else {
         crate::shell::open_in_terminal(&format!("ssh {alias}"))
+    }
+}
+
+// ───────────────────────────── Clés et empreintes ─────────────────────────────
+
+/// Un outil d'OpenSSH, lancé sans fenêtre. Celui de Windows de préférence.
+fn tool(name: &str) -> Command {
+    let bundled = Path::new(&std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into()))
+        .join(r"System32\OpenSSH")
+        .join(format!("{name}.exe"));
+    let mut cmd = if bundled.is_file() { Command::new(bundled) } else { Command::new(name) };
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd
+}
+
+fn missing(e: std::io::Error) -> String {
+    format!("OpenSSH est introuvable sur ce PC ({e}).")
+}
+
+fn known_host(alias: &str) -> Result<(), String> {
+    if plain_alias(alias) && hosts().iter().any(|(a, _)| a == alias) {
+        Ok(())
+    } else {
+        Err(format!("« {alias} » n'est pas un serveur du fichier de configuration SSH."))
+    }
+}
+
+/// Crée une clé ED25519 dans `~/.ssh`. Avec `passphrase`, la création se termine dans un terminal :
+/// la phrase secrète y est saisie, elle ne passe jamais par Kiosky.
+pub fn keygen(name: &str, comment: &str, passphrase: bool) -> Result<(), String> {
+    let name = name.trim();
+    if !plain_alias(name) || name.ends_with(".pub") {
+        return Err("Nom de clé invalide : lettres, chiffres, points, tirets, sans espace.".into());
+    }
+    let comment = comment.trim();
+    if comment.len() > 100 || !comment.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '@' | '.' | '_' | '-' | ' ')) {
+        return Err("Commentaire invalide : lettres, chiffres, espaces et @ . _ - seulement.".into());
+    }
+    let path = ssh_dir().join(name);
+    // Jamais d'écrasement : une clé remplacée est une clé perdue.
+    if path.exists() || ssh_dir().join(format!("{name}.pub")).exists() {
+        return Err(format!("Une clé « {name} » existe déjà."));
+    }
+    std::fs::create_dir_all(ssh_dir()).map_err(|e| e.to_string())?;
+    let path = path.to_string_lossy().into_owned();
+    if passphrase {
+        let script = format!("ssh-keygen -t ed25519 -f {} -C {}", ps_quote(&path), ps_quote(comment));
+        return crate::shell::open_script_in_terminal(&script);
+    }
+    let out = tool("ssh-keygen").args(["-q", "-t", "ed25519", "-f", &path, "-C", comment, "-N", ""]).output().map_err(missing)?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(format!("La clé n'a pas pu être créée : {}", String::from_utf8_lossy(&out.stderr).trim()))
+    }
+}
+
+/// Script PowerShell qui ajoute `public` aux clés autorisées du serveur, sans doublon.
+fn send_script(alias: &str, public: &str) -> String {
+    let remote = format!(
+        "umask 077; mkdir -p ~/.ssh; grep -qxF '{public}' ~/.ssh/authorized_keys 2>/dev/null || echo '{public}' >> ~/.ssh/authorized_keys"
+    );
+    [
+        format!("$remote = \"{remote}\""),
+        format!("ssh {alias} $remote"),
+        format!("if ($LASTEXITCODE -eq 0) {{ Write-Host 'Clé installée sur {alias}. Essaie : ssh {alias}' -ForegroundColor Green }}"),
+        "else { Write-Host 'La clé n''a pas été installée.' -ForegroundColor Red }".to_string(),
+    ]
+    .join("\n")
+}
+
+/// Ajoute la clé publique `key` aux clés autorisées du serveur `alias`, dans un terminal
+/// (le serveur demande en général le mot de passe une dernière fois).
+pub fn send_key(key: &str, alias: &str) -> Result<(), String> {
+    known_host(alias)?;
+    if !plain_alias(key) {
+        return Err("Clé inconnue".into());
+    }
+    let text = std::fs::read_to_string(ssh_dir().join(format!("{key}.pub")))
+        .map_err(|_| format!("La clé « {key} » n'a pas de fichier .pub."))?;
+    let public = text.lines().next().unwrap_or_default().trim();
+    // La clé est recopiée dans une commande : rien d'autre que les caractères d'une clé publique.
+    let safe = |c: char| c.is_ascii_alphanumeric() || matches!(c, '@' | '.' | '_' | '+' | '/' | '=' | ':' | '-' | ' ');
+    if public.is_empty() || !public.chars().all(safe) {
+        return Err("Le commentaire de cette clé contient des caractères spéciaux : envoie-la à la main.".into());
+    }
+    crate::shell::open_script_in_terminal(&send_script(alias, public))
+}
+
+/// Oublie l'empreinte enregistrée pour le serveur `alias` (serveur réinstallé : SSH refuse de
+/// s'y connecter tant que l'ancienne empreinte est dans known_hosts). Renvoie ce qui a été fait.
+pub fn forget(alias: &str) -> Result<String, String> {
+    let blocks = parse(&read_config()?);
+    let block = blocks
+        .iter()
+        .find(|b| b.kind == "host" && b.patterns.split_whitespace().any(|a| a == alias))
+        .ok_or_else(|| format!("« {alias} » n'est pas un serveur du fichier de configuration SSH."))?;
+    let host = option(block, "HostName").unwrap_or(alias);
+    if host.is_empty() || host.starts_with('-') || !host.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | ':')) {
+        return Err(format!("Adresse « {host} » non prise en charge."));
+    }
+    // known_hosts note « [adresse]:port » dès que le port n'est pas 22.
+    let target = match option(block, "Port").filter(|p| *p != "22" && p.parse::<u16>().is_ok()) {
+        Some(port) => format!("[{host}]:{port}"),
+        None => host.to_string(),
+    };
+    let out = tool("ssh-keygen").args(["-R", &target]).output().map_err(missing)?;
+    let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    if text.contains("updated") {
+        Ok(format!("Empreinte de {target} oubliée : elle sera redemandée à la prochaine connexion."))
+    } else {
+        Ok(format!("Aucune empreinte enregistrée pour {target}."))
+    }
+}
+
+// ───────────────────────────── Tunnels ─────────────────────────────
+
+/// Redirection d'un port du serveur vers ce PC : `localhost:local_port` mène à
+/// `remote_host:remote_port`, vu depuis le serveur `host`.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Tunnel {
+    /// Alias du serveur dans ~/.ssh/config
+    pub host: String,
+    pub local_port: u16,
+    pub remote_host: String,
+    pub remote_port: u16,
+}
+
+impl Tunnel {
+    pub fn id(&self) -> String {
+        format!("{}:{}:{}:{}", self.host, self.local_port, self.remote_host, self.remote_port)
+    }
+}
+
+/// Tunnels ouverts par Kiosky : (identifiant, processus ssh).
+static TUNNELS: Mutex<Vec<(String, Child)>> = Mutex::new(Vec::new());
+
+/// Ce que ssh a répondu avant de s'arrêter, en clair.
+fn explain(stderr: &str) -> String {
+    let s = stderr.to_lowercase();
+    if s.contains("host key verification failed") {
+        "Serveur encore inconnu, ou réinstallé : connecte-toi une fois avec « Connecter » pour accepter son empreinte.".into()
+    } else if s.contains("permission denied") {
+        "Le serveur demande un mot de passe ou une phrase secrète : un tunnel en arrière-plan a besoin d'une clé utilisable sans saisie (ou de l'agent SSH).".into()
+    } else if s.contains("address already in use") || s.contains("cannot listen") || s.contains("could not request local forwarding") {
+        "Le port local est déjà utilisé.".into()
+    } else if s.contains("could not resolve") || s.contains("timed out") || s.contains("connection refused") || s.contains("unreachable") {
+        "Serveur injoignable.".into()
+    } else {
+        stderr.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("Le tunnel s'est fermé aussitôt.").trim().to_string()
+    }
+}
+
+fn exited(child: &mut Child) -> Option<String> {
+    child.try_wait().ok().flatten()?;
+    let mut text = String::new();
+    if let Some(mut err) = child.stderr.take() {
+        let _ = err.read_to_string(&mut text);
+    }
+    Some(explain(&text))
+}
+
+pub fn tunnel_start(t: &Tunnel) -> Result<(), String> {
+    known_host(&t.host)?;
+    let remote = t.remote_host.trim();
+    if t.local_port == 0 || t.remote_port == 0 || !plain_alias(remote) {
+        return Err("Tunnel invalide : vérifie les ports et l'adresse de destination.".into());
+    }
+    let id = t.id();
+    if tunnels_running().contains(&id) {
+        return Ok(());
+    }
+    let listening = |port: u16| {
+        crate::ports::list().unwrap_or_default().into_iter().find(|e| e.proto == "TCP" && e.listening && e.local_port == port)
+    };
+    if let Some(owner) = listening(t.local_port) {
+        return Err(format!("Le port local {} est déjà utilisé par {}.", t.local_port, owner.process));
+    }
+    let forward = format!("127.0.0.1:{}:{}:{}", t.local_port, remote, t.remote_port);
+    // BatchMode : jamais de question posée dans le vide (mot de passe, empreinte), un échec net.
+    let mut child = tool("ssh")
+        .args(["-N", "-L", &forward])
+        .args(["-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes", "-o", "ConnectTimeout=10"])
+        .args(["-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3", &t.host])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(missing)?;
+    // Le tunnel est établi quand ssh écoute sur le port local ; un échec arrive avant.
+    for _ in 0..60 {
+        std::thread::sleep(Duration::from_millis(250));
+        if let Some(why) = exited(&mut child) {
+            return Err(why);
+        }
+        if listening(t.local_port).is_some_and(|e| e.pid == child.id()) {
+            TUNNELS.lock().unwrap().push((id, child));
+            return Ok(());
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    Err("Le serveur ne répond pas.".into())
+}
+
+/// Identifiants des tunnels encore ouverts (ceux dont ssh s'est arrêté sont oubliés).
+pub fn tunnels_running() -> Vec<String> {
+    let mut list = TUNNELS.lock().unwrap();
+    list.retain_mut(|(_, child)| matches!(child.try_wait(), Ok(None)));
+    list.iter().map(|(id, _)| id.clone()).collect()
+}
+
+pub fn tunnel_stop(id: &str) {
+    let mut list = TUNNELS.lock().unwrap();
+    if let Some(i) = list.iter().position(|(t, _)| t == id) {
+        let (_, mut child) = list.remove(i);
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
+
+/// À la fermeture de Kiosky : aucun ssh ne doit rester derrière.
+pub fn stop_all() {
+    for (_, mut child) in TUNNELS.lock().unwrap().drain(..) {
+        let _ = child.kill();
+        let _ = child.wait();
     }
 }
 
@@ -397,5 +626,21 @@ mod tests {
         assert!(!plain_alias("a;b"));
         assert_eq!(key_kind("ssh-ed25519"), "ED25519");
         assert_eq!(key_kind("sk-ssh-ed25519@openssh.com"), "ED25519 (clé de sécurité)");
+    }
+
+    #[test]
+    fn tunnels_and_keys() {
+        let t = Tunnel { host: "vps".into(), local_port: 5432, remote_host: "localhost".into(), remote_port: 5432 };
+        assert_eq!(t.id(), "vps:5432:localhost:5432");
+        assert!(explain("user@host: Permission denied (publickey,password).").contains("mot de passe"));
+        assert!(explain("Host key verification failed.").contains("empreinte"));
+        assert!(explain("bind [127.0.0.1]:5432: Address already in use").contains("déjà utilisé"));
+        assert_eq!(explain("ligne\nautre chose\n"), "autre chose");
+        // Refusés avant toute écriture sur le disque.
+        assert!(keygen("ma cle", "", false).is_err());
+        assert!(keygen("cle", "a'b", false).is_err());
+        let script = send_script("vps", "ssh-ed25519 AAAA moi@pc");
+        assert!(script.contains("ssh vps $remote"));
+        assert!(script.contains("grep -qxF 'ssh-ed25519 AAAA moi@pc' ~/.ssh/authorized_keys"));
     }
 }

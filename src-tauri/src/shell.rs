@@ -117,6 +117,30 @@ pub fn run(cmd: &str) -> Result<ShellOutput, String> {
 }
 
 /// Ouvre la commande dans un terminal, pour ce qui est interactif (ssh, python, top…).
+/// Ouvre un terminal sur un script PowerShell. Le script voyage encodé : ses guillemets et ses
+/// « ; » n'ont pas à survivre aux lignes de commande de Windows Terminal puis de PowerShell.
+pub fn open_script_in_terminal(script: &str) -> Result<(), String> {
+    use base64::Engine;
+    let utf16: Vec<u8> = script.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+    let encoded = base64::engine::general_purpose::STANDARD.encode(utf16);
+    let home = std::env::var("USERPROFILE").unwrap_or_else(|_| "C:\\".into());
+    let wt = std::path::Path::new(&std::env::var("LOCALAPPDATA").unwrap_or_default()).join(r"Microsoft\WindowsApps\wt.exe");
+    let result = if wt.exists() {
+        Command::new(wt)
+            .args(["-d", &home, "powershell.exe", "-NoExit", "-EncodedCommand", &encoded])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+    } else {
+        const CREATE_NEW_CONSOLE: u32 = 0x10;
+        Command::new("powershell.exe")
+            .args(["-NoExit", "-EncodedCommand", &encoded])
+            .current_dir(&home)
+            .creation_flags(CREATE_NEW_CONSOLE)
+            .spawn()
+    };
+    result.map(|_| ()).map_err(|e| format!("Impossible d'ouvrir le terminal : {e}"))
+}
+
 pub fn open_in_terminal(cmd: &str) -> Result<(), String> {
     let home = std::env::var("USERPROFILE").unwrap_or_else(|_| "C:\\".into());
     let wt = std::path::Path::new(&std::env::var("LOCALAPPDATA").unwrap_or_default()).join(r"Microsoft\WindowsApps\wt.exe");
