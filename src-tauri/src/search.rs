@@ -161,6 +161,8 @@ const PAGES: &[(&str, &str, &str)] = &[
     ("startup", "Démarrage", "démarrage startup boot"),
     ("cleaner", "Nettoyage", "nettoyer temp cache node_modules espace"),
     ("ports", "Ports", "port réseau localhost"),
+    ("ssh", "SSH", "serveurs clés config terminal distant"),
+    ("network", "Réseau", "ip adresse dns hosts débit wifi internet speedtest"),
     ("projects", "Projets", "projets code git"),
     ("folders", "Dossiers", "raccourcis dossiers favoris"),
     ("env", "Variables d'environnement", "path env variables"),
@@ -280,6 +282,35 @@ fn dynamic_items(settings: &Settings, projects: &[crate::projects::Project]) -> 
             source: "folders",
             module: Some("folders"),
         });
+    }
+    if settings.module_on("ssh") {
+        let vscode = crate::launcher::has_vscode();
+        for (alias, target) in crate::ssh::hosts() {
+            if vscode {
+                v.push(Item {
+                    kind: "SSH",
+                    title: format!("{alias} (VS Code)"),
+                    hint: if target.is_empty() { "Ouvrir dans VS Code".into() } else { format!("Ouvrir {target} dans VS Code") },
+                    keywords: format!("ssh code remote {target}"),
+                    action: format!("sshcode:{alias}"),
+                    copy: format!("code --remote ssh-remote+{alias}"),
+                    weight: 14,
+                    source: "toolbox",
+                    module: Some("ssh"),
+                });
+            }
+            v.push(Item {
+                kind: "SSH",
+                title: alias.clone(),
+                hint: if target.is_empty() { "Se connecter dans un terminal".into() } else { format!("Se connecter à {target}") },
+                keywords: format!("ssh {target}"),
+                action: format!("ssh:{alias}"),
+                copy: format!("ssh {alias}"),
+                weight: 15,
+                source: "toolbox",
+                module: Some("ssh"),
+            });
+        }
     }
     v
 }

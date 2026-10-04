@@ -107,6 +107,31 @@ export type PortEntry = {
   system: boolean;
 };
 
+export type Adapter = {
+  name: string;
+  description: string;
+  kind: "wifi" | "ethernet" | "vpn" | "virtual" | "other";
+  ipv4: string[];
+  prefix: number;
+  ipv6: string[];
+  gateway: string[];
+  dns: string[];
+  mac: string;
+  speed: number;
+  dhcp: boolean;
+};
+export type PublicIp = { ipv4: string | null; ipv6: string | null; country: string };
+export type DnsAnswer = { host: string; addresses: string[]; ms: number };
+export type SpeedProgress = { phase: "ping" | "down" | "up"; mbps: number; progress: number };
+export type SpeedResult = { ping_ms: number; jitter_ms: number; down_mbps: number; up_mbps: number };
+export type HostLine = { raw: string; entry: boolean; ip: string; names: string; comment: string; enabled: boolean };
+export type HostsState = { lines: HostLine[]; stamp: string; is_admin: boolean; undo: boolean; path: string };
+
+export type SshLine = { raw: string; key: string; value: string };
+export type SshBlock = { before: string[]; header: string; kind: "host" | "match" | "global"; patterns: string; lines: SshLine[] };
+export type SshKey = { name: string; path: string; kind: string; comment: string; public: string | null; has_private: boolean };
+export type SshState = { blocks: SshBlock[]; stamp: string; undo: boolean; dir: string; keys: SshKey[]; vscode: boolean };
+
 export type FoundFolder = {
   path: string;
   name: string;
@@ -206,6 +231,21 @@ export const api = {
 
   getPorts: () => invoke<PortEntry[]>("get_ports"),
   killProcess: (pid: number) => invoke<void>("kill_process", { pid }),
+
+  getNetwork: () => invoke<Adapter[]>("get_network"),
+  getPublicIp: () => invoke<PublicIp>("get_public_ip"),
+  dnsLookup: (host: string) => invoke<DnsAnswer>("dns_lookup", { host }),
+  flushDns: () => invoke<void>("flush_dns"),
+  runSpeedtest: () => invoke<SpeedResult | null>("run_speedtest"),
+  stopSpeedtest: () => invoke<void>("stop_speedtest"),
+  getHosts: () => invoke<HostsState>("get_hosts"),
+  saveHosts: (lines: HostLine[], stamp: string) => invoke<void>("save_hosts", { lines, stamp }),
+  undoHosts: () => invoke<void>("undo_hosts"),
+
+  getSsh: () => invoke<SshState>("get_ssh"),
+  saveSsh: (blocks: SshBlock[], stamp: string) => invoke<void>("save_ssh", { blocks, stamp }),
+  undoSsh: () => invoke<void>("undo_ssh"),
+  sshConnect: (alias: string, vscode = false) => invoke<void>("ssh_connect", { alias, vscode }),
 
   getMonitor: () => invoke<MonitorState>("get_monitor"),
   killProcesses: (pids: number[]) => invoke<void>("kill_processes", { pids }),

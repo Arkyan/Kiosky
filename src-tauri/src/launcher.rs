@@ -127,6 +127,21 @@ pub fn open_with(id: &str, path: &str) -> Result<(), String> {
     cmd.spawn().map(|_| ()).map_err(|e| format!("Impossible de lancer {} : {e}", opener.name))
 }
 
+/// VS Code est installé : les serveurs SSH peuvent s'ouvrir dedans.
+pub fn has_vscode() -> bool {
+    openers().iter().any(|o| o.id == "vscode")
+}
+
+/// Ouvre une fenêtre VS Code connectée au serveur `alias` (extension Remote - SSH).
+pub fn open_vscode_remote(alias: &str) -> Result<(), String> {
+    let code = openers().iter().find(|o| o.id == "vscode").ok_or("VS Code n'est pas installé sur ce PC.")?;
+    Command::new(&code.exe)
+        .args(["--new-window", "--remote", &format!("ssh-remote+{alias}")])
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Impossible de lancer VS Code : {e}"))
+}
+
 #[derive(Serialize)]
 pub struct KnownFolder {
     pub name: String,

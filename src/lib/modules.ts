@@ -12,7 +12,9 @@ export type ModuleId =
   | "startup"
   | "cleaner"
   | "updates"
-  | "ports";
+  | "ports"
+  | "network"
+  | "ssh";
 
 export type ModuleInfo = { id: ModuleId; label: string; icon: string; group: string; description: string };
 
@@ -25,11 +27,13 @@ export const MODULES: ModuleInfo[] = [
   { id: "folders", label: "Dossiers", icon: "folder", group: "Dev", description: "Raccourcis clavier vers les dossiers favoris" },
   { id: "env", label: "Variables", icon: "variable", group: "Dev", description: "PATH et variables d'environnement" },
   { id: "containers", label: "Conteneurs", icon: "box", group: "Dev", description: "WSL et Docker" },
+  { id: "ssh", label: "SSH", icon: "key", group: "Dev", description: "Serveurs du fichier ~/.ssh/config et clés, aussi dans la palette" },
   { id: "monitor", label: "Moniteur", icon: "activity", group: "Système", description: "Graphiques, infobulle et jauge CPU de l'icône" },
   { id: "startup", label: "Démarrage", icon: "power", group: "Système", description: "Programmes lancés avec Windows" },
   { id: "cleaner", label: "Nettoyage", icon: "broom", group: "Système", description: "Fichiers temporaires, caches, node_modules…" },
   { id: "updates", label: "Mises à jour", icon: "download", group: "Système", description: "Nouvelles versions des applications installées (winget)" },
   { id: "ports", label: "Ports", icon: "plug", group: "Système", description: "Ports ouverts, et kill 3000 dans la palette" },
+  { id: "network", label: "Réseau", icon: "wifi", group: "Système", description: "Adresses IP, DNS, test de débit et fichier hosts" },
 ];
 
 /** Ce que la palette peut chercher (désactivable une par une). */

@@ -15,11 +15,13 @@ mod icons;
 mod launcher;
 mod media;
 mod monitor;
+mod network;
 mod ports;
 mod search;
 mod projects;
 mod settings;
 mod shell;
+mod ssh;
 mod startup;
 mod units;
 mod util;
@@ -563,6 +565,12 @@ async fn convert(state: State<'_, AppState>, input: String) -> Result<Vec<conver
             return Ok(list);
         }
     }
+    // « ip » : adresses locale et publique.
+    if settings.module_on("network") {
+        if let Some(list) = converter::ip_commands(input.trim()).await {
+            return Ok(list);
+        }
+    }
     let mut out = if settings.source_on("calc") { converter::convert(&input).await } else { Vec::new() };
     let projects = projects::load_cache(&projects_cache(&state));
     out.extend(search::search(&input, &settings, &projects));
@@ -786,6 +794,80 @@ async fn kill_process(pid: u32) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn get_network() -> Result<Vec<network::Adapter>, String> {
+    blocking(|| Ok(network::adapters())).await
+}
+
+#[tauri::command]
+async fn get_public_ip() -> Result<network::PublicIp, String> {
+    Ok(network::public_ip().await)
+}
+
+#[tauri::command]
+async fn dns_lookup(host: String) -> Result<network::DnsAnswer, String> {
+    blocking(move || network::resolve(&host)).await
+}
+
+#[tauri::command]
+async fn flush_dns() -> Result<(), String> {
+    blocking(network::flush_dns).await
+}
+
+#[tauri::command]
+async fn run_speedtest(app: AppHandle) -> Result<Option<network::SpeedResult>, String> {
+    network::speedtest(move |p| {
+        let _ = app.emit_to("main", "speedtest-progress", p);
+    })
+    .await
+}
+
+#[tauri::command]
+fn stop_speedtest() {
+    network::stop_speedtest();
+}
+
+#[tauri::command]
+async fn get_hosts(state: State<'_, AppState>) -> Result<network::HostsState, String> {
+    let dir = config_dir(&state);
+    blocking(move || network::hosts(&dir)).await
+}
+
+#[tauri::command]
+async fn save_hosts(state: State<'_, AppState>, lines: Vec<network::HostLine>, stamp: String) -> Result<(), String> {
+    let dir = config_dir(&state);
+    blocking(move || network::save_hosts(&dir, &lines, &stamp)).await
+}
+
+#[tauri::command]
+async fn undo_hosts(state: State<'_, AppState>) -> Result<(), String> {
+    let dir = config_dir(&state);
+    blocking(move || network::undo_hosts(&dir)).await
+}
+
+#[tauri::command]
+async fn get_ssh(state: State<'_, AppState>) -> Result<ssh::SshState, String> {
+    let dir = config_dir(&state);
+    blocking(move || ssh::state(&dir)).await
+}
+
+#[tauri::command]
+async fn save_ssh(state: State<'_, AppState>, blocks: Vec<ssh::SshBlock>, stamp: String) -> Result<(), String> {
+    let dir = config_dir(&state);
+    blocking(move || ssh::save(&dir, &blocks, &stamp)).await
+}
+
+#[tauri::command]
+async fn undo_ssh(state: State<'_, AppState>) -> Result<(), String> {
+    let dir = config_dir(&state);
+    blocking(move || ssh::undo(&dir)).await
+}
+
+#[tauri::command]
+async fn ssh_connect(alias: String, vscode: bool) -> Result<(), String> {
+    blocking(move || ssh::connect(&alias, vscode)).await
+}
+
+#[tauri::command]
 async fn kill_processes(pids: Vec<u32>) -> Result<(), String> {
     blocking(move || {
         // On arrête tout ce qui peut l'être, et on signale la première erreur.
@@ -989,6 +1071,8 @@ async fn run_action(app: AppHandle, state: State<'_, AppState>, action: String) 
             shell::open_in_terminal(&arg)?;
             return Ok(()); // une commande ponctuelle : pas de compteur d'usage
         }
+        "ssh" => blocking(move || ssh::connect(&arg, false)).await?,
+        "sshcode" => blocking(move || ssh::connect(&arg, true)).await?,
         "page" => {
             show_main(&app);
             let _ = app.emit_to("main", "navigate", arg.clone());
@@ -1396,6 +1480,19 @@ fn main() {
             pick_folder,
             get_ports,
             kill_process,
+            get_network,
+            get_public_ip,
+            dns_lookup,
+            flush_dns,
+            run_speedtest,
+            stop_speedtest,
+            get_hosts,
+            save_hosts,
+            undo_hosts,
+            get_ssh,
+            save_ssh,
+            undo_ssh,
+            ssh_connect,
             get_monitor,
             kill_processes,
             open_url,

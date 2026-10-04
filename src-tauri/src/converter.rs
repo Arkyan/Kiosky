@@ -132,6 +132,30 @@ pub fn port_commands(q: &str) -> Option<Vec<ConvResult>> {
     Some(if kill_first { [kills, opens].concat() } else { [opens, kills].concat() })
 }
 
+// ───────────────────────────── Adresse IP ─────────────────────────────
+
+/// « ip », « mon ip » : adresse locale et adresse publique, copiées avec Entrée.
+pub async fn ip_commands(q: &str) -> Option<Vec<ConvResult>> {
+    if !matches!(q.to_lowercase().as_str(), "ip" | "mon ip" | "my ip" | "myip" | "ip locale" | "ip publique") {
+        return None;
+    }
+    let mut out = Vec::new();
+    // Les cartes sans passerelle (Hyper-V, VirtualBox…) ne mènent nulle part.
+    for a in crate::network::adapters().iter().filter(|a| !a.gateway.is_empty()) {
+        if let Some(ip) = a.ipv4.first() {
+            out.push(res("Adresse locale", ip.clone(), ip.clone(), a.name.clone()));
+        }
+    }
+    let public = crate::network::public_ip().await;
+    for ip in public.ipv4.iter().chain(public.ipv6.iter()) {
+        out.push(res("Adresse publique", ip.clone(), ip.clone(), "Vue depuis Internet".into()));
+    }
+    if out.is_empty() {
+        out.push(err("Adresse IP", "Aucune connexion réseau".into()));
+    }
+    Some(out)
+}
+
 // ───────────────────────────── Pourcentages ─────────────────────────────
 
 /// « 20% de 150 », « 15 % of 80 »

@@ -13,6 +13,8 @@
   import ColorPage from "./pages/ColorPage.svelte";
   import CleanerPage from "./pages/CleanerPage.svelte";
   import PortsPage from "./pages/PortsPage.svelte";
+  import NetworkPage from "./pages/NetworkPage.svelte";
+  import SshPage from "./pages/SshPage.svelte";
   import MonitorPage from "./pages/MonitorPage.svelte";
   import FoldersPage from "./pages/FoldersPage.svelte";
   import ProjectsPage from "./pages/ProjectsPage.svelte";
@@ -29,6 +31,8 @@
     | "startup"
     | "cleaner"
     | "ports"
+    | "network"
+    | "ssh"
     | "folders"
     | "projects"
     | "env"
@@ -128,6 +132,10 @@
             <CleanerPage />
           {:else if page === "ports"}
             <PortsPage />
+          {:else if page === "network"}
+            <NetworkPage />
+          {:else if page === "ssh"}
+            <SshPage />
           {:else if page === "monitor"}
             <MonitorPage />
           {:else if page === "folders"}
