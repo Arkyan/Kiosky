@@ -3,7 +3,7 @@
   import Icon from "../lib/Icon.svelte";
   import PageHeader from "../lib/PageHeader.svelte";
   import Toggle from "../lib/Toggle.svelte";
-  import { api, copyText, type SshBlock, type SshLine, type SshState, type SshTunnel } from "../lib/api";
+  import { api, copyText, type SshBlock, type SshLine, type SshProject, type SshState, type SshTunnel } from "../lib/api";
   import { store, saveSettings } from "../lib/settings.svelte";
 
   /** Options qui ont leur propre champ ; les autres sont listées en dessous. */
@@ -220,6 +220,51 @@
     } catch (e) {
       error = String(e);
     }
+  }
+
+  // ─── Projets ───
+
+  const projects = $derived(store.s?.ssh_projects ?? []);
+  const pid = (p: SshProject) => `${p.host}:${p.path}`;
+  let draftProject = $state({ name: "", host: "", path: "" });
+
+  $effect(() => {
+    if (aliases.length && !aliases.includes(draftProject.host)) draftProject.host = aliases[0];
+  });
+
+  async function openProject(p: SshProject, vscode = false) {
+    try {
+      await api.sshOpenProject(p, vscode);
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  function addProject() {
+    if (!store.s) return;
+    const host = draftProject.host || aliases[0];
+    const path = draftProject.path.trim().replace(/(.)\/+$/, "$1");
+    if (!host || !path.startsWith("/")) {
+      error = "Projet incomplet : il faut un serveur et un chemin absolu sur le serveur (« /root/projet »).";
+      return;
+    }
+    // Sans nom, celui du dossier : « /root/citesco » → « citesco ».
+    const name = draftProject.name.trim() || path.split("/").filter(Boolean).pop() || host;
+    const p = { name, host, path };
+    if (projects.some((x) => pid(x) === pid(p))) {
+      error = "Ce projet existe déjà.";
+      return;
+    }
+    store.s.ssh_projects = [...projects, p];
+    saveSettings(0);
+    draftProject = { name: "", host, path: "" };
+    error = "";
+  }
+
+  function removeProject(p: SshProject) {
+    if (!store.s) return;
+    store.s.ssh_projects = projects.filter((x) => pid(x) !== pid(p));
+    saveSettings(0);
   }
 
   // ─── Tunnels ───
@@ -453,6 +498,54 @@
       </div>
     </div>
   {/if}
+
+  <h2>Projets <span class="muted small">· {projects.length}</span></h2>
+  <div class="card list">
+    {#each projects as p (pid(p))}
+      {@const known = aliases.includes(p.host)}
+      <div class="srow">
+        <div class="sname">
+          <span class="strong">{p.name}</span>
+          {#if !known}<span class="badge">serveur introuvable</span>{/if}
+        </div>
+        <div class="starget small muted mono" title={`${p.host}:${p.path}`}>{p.host}:{p.path}</div>
+        <div class="sact">
+          {#if known}
+            <button class="btn ghost small-btn connect" onclick={() => openProject(p)} title={`Ouvre un terminal sur ${p.host}, dans ${p.path}`}>
+              <Icon name="terminal" size={14} /> Terminal
+            </button>
+            {#if ssh.vscode}
+              <button class="btn ghost small-btn connect" onclick={() => openProject(p, true)} title={`Ouvre ${p.path} dans VS Code, connecté à ${p.host}`}>
+                <Icon name="code" size={14} /> VS Code
+              </button>
+            {/if}
+          {/if}
+          <button class="btn ghost del" title="Retirer" onclick={() => removeProject(p)}><Icon name="trash" size={14} /></button>
+        </div>
+      </div>
+    {/each}
+    {#if aliases.length}
+      <form
+        class="tform"
+        onsubmit={(e) => {
+          e.preventDefault();
+          addProject();
+        }}
+      >
+        <select class="field pick" bind:value={draftProject.host}>
+          {#each aliases as a}<option value={a}>{a}</option>{/each}
+        </select>
+        <input class="field mono grow" bind:value={draftProject.path} placeholder="Dossier sur le serveur (/root/projet)" spellcheck="false" />
+        <input class="field tname" bind:value={draftProject.name} placeholder="Nom (celui du dossier)" spellcheck="false" />
+        <button class="btn" type="submit" disabled={!draftProject.path.trim()}><Icon name="plus" size={14} /> Ajouter</button>
+      </form>
+    {:else}
+      <div class="empty muted">Ajoute d'abord un serveur : un projet est un dossier sur lui.</div>
+    {/if}
+  </div>
+  <div class="small muted note">
+    Un projet s'ouvre directement dans son dossier, depuis ici ou la palette : une seule connexion, donc une seule phrase secrète.
+  </div>
 
   <div class="khead">
     <h2>Clés <span class="muted small">· {ssh.keys.length}</span></h2>
@@ -797,6 +890,10 @@
   .tport {
     flex: none;
     width: 110px;
+  }
+  .tname {
+    flex: none;
+    width: 190px;
   }
   .note {
     margin: 8px 4px 0;

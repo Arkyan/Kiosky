@@ -97,6 +97,8 @@ pub struct Settings {
     pub ai_gemini_model: String,
     /// Tunnels SSH enregistrés (page SSH), ouverts à la demande
     pub ssh_tunnels: Vec<crate::ssh::Tunnel>,
+    /// Dossiers de projet sur les serveurs SSH, ouverts directement depuis la palette
+    pub ssh_projects: Vec<crate::ssh::RemoteProject>,
 }
 
 impl Settings {
@@ -165,6 +167,7 @@ impl Default for Settings {
             ai_claude_model: "claude-opus-5-5".into(),
             ai_gemini_model: "gemini-flash-latest".into(),
             ssh_tunnels: vec![],
+            ssh_projects: vec![],
         }
     }
 }

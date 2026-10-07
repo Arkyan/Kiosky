@@ -142,6 +142,23 @@ pub fn open_vscode_remote(alias: &str) -> Result<(), String> {
         .map_err(|e| format!("Impossible de lancer VS Code : {e}"))
 }
 
+/// VS Code connecté au serveur `alias`, directement dans le dossier `path` (chemin absolu).
+pub fn open_vscode_remote_folder(alias: &str, path: &str) -> Result<(), String> {
+    let code = openers().iter().find(|o| o.id == "vscode").ok_or("VS Code n'est pas installé sur ce PC.")?;
+    let path: String = path
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'/' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
+            _ => format!("%{b:02X}"),
+        })
+        .collect();
+    Command::new(&code.exe)
+        .args(["--new-window", "--folder-uri", &format!("vscode-remote://ssh-remote+{alias}{path}")])
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Impossible de lancer VS Code : {e}"))
+}
+
 #[derive(Serialize)]
 pub struct KnownFolder {
     pub name: String,

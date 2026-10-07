@@ -344,6 +344,48 @@ pub fn connect(alias: &str, vscode: bool) -> Result<(), String> {
     }
 }
 
+// ───────────────────────────── Projets distants ─────────────────────────────
+
+/// Un dossier sur un serveur, ouvert directement : une seule connexion, donc une seule phrase secrète.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct RemoteProject {
+    pub name: String,
+    /// Alias du serveur dans ~/.ssh/config
+    pub host: String,
+    /// Chemin absolu sur le serveur : « /root/citesco »
+    pub path: String,
+}
+
+/// Le chemin est recopié dans une commande et dans une adresse VS Code : absolu, sans guillemet ni
+/// caractère que le shell du serveur interpréterait.
+fn remote_path(path: &str) -> Result<&str, String> {
+    let p = path.trim();
+    let safe = |c: char| c.is_alphanumeric() || matches!(c, '/' | '.' | '_' | '-' | '+' | '@' | ',' | ' ');
+    if p.starts_with('/') && p.chars().all(safe) && !p.split('/').any(|s| s == "..") {
+        Ok(p)
+    } else {
+        Err("Chemin invalide : un chemin absolu sur le serveur (« /root/projet »), sans guillemets ni caractères spéciaux.".into())
+    }
+}
+
+/// Script PowerShell : `ssh -t alias` qui se place dans le dossier puis lance le shell habituel.
+fn project_script(alias: &str, path: &str) -> String {
+    // Côté serveur : cd '/chemin' && exec $SHELL -l (le chemin ne contient pas de « ' »).
+    let remote = format!("cd '{path}' && exec $SHELL -l");
+    format!("ssh -t {alias} {}", ps_quote(&remote))
+}
+
+/// Ouvre le dossier `path` du serveur `alias` dans un terminal, ou dans VS Code.
+pub fn open_project(alias: &str, path: &str, vscode: bool) -> Result<(), String> {
+    known_host(alias)?;
+    let path = remote_path(path)?;
+    if vscode {
+        crate::launcher::open_vscode_remote_folder(alias, path)
+    } else {
+        crate::shell::open_script_in_terminal(&project_script(alias, path))
+    }
+}
+
 // ───────────────────────────── Clés et empreintes ─────────────────────────────
 
 /// Un outil d'OpenSSH, lancé sans fenêtre. Celui de Windows de préférence.
@@ -626,6 +668,19 @@ mod tests {
         assert!(!plain_alias("a;b"));
         assert_eq!(key_kind("ssh-ed25519"), "ED25519");
         assert_eq!(key_kind("sk-ssh-ed25519@openssh.com"), "ED25519 (clé de sécurité)");
+    }
+
+    #[test]
+    fn projects() {
+        assert_eq!(remote_path(" /root/citesco "), Ok("/root/citesco"));
+        assert_eq!(remote_path("/var/www/mon site"), Ok("/var/www/mon site"));
+        assert!(remote_path("~/citesco").is_err());
+        assert!(remote_path("citesco").is_err());
+        assert!(remote_path("/root/a'b").is_err());
+        assert!(remote_path("/root/$(reboot)").is_err());
+        assert!(remote_path("/root/a;b").is_err());
+        assert!(remote_path("/root/../etc").is_err());
+        assert_eq!(project_script("raildle", "/root/citesco"), "ssh -t raildle 'cd ''/root/citesco'' && exec $SHELL -l'");
     }
 
     #[test]

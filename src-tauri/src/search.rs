@@ -287,7 +287,36 @@ fn dynamic_items(settings: &Settings, projects: &[crate::projects::Project]) -> 
     }
     if settings.module_on("ssh") {
         let vscode = crate::launcher::has_vscode();
-        for (alias, target) in crate::ssh::hosts() {
+        let hosts = crate::ssh::hosts();
+        // Un projet dont le serveur a disparu du fichier ne mène plus nulle part.
+        for p in settings.ssh_projects.iter().filter(|p| hosts.iter().any(|(a, _)| *a == p.host)) {
+            let place = format!("{}:{}", p.host, p.path);
+            if vscode {
+                v.push(Item {
+                    kind: "Projet SSH",
+                    title: format!("{} (VS Code)", p.name),
+                    hint: format!("Ouvrir {place} dans VS Code"),
+                    keywords: format!("ssh code remote projet {} {}", p.host, p.path),
+                    action: format!("sshprojcode:{}|{}", p.host, p.path),
+                    copy: place.clone(),
+                    weight: 17,
+                    source: "toolbox",
+                    module: Some("ssh"),
+                });
+            }
+            v.push(Item {
+                kind: "Projet SSH",
+                title: p.name.clone(),
+                hint: format!("Terminal dans {place}"),
+                keywords: format!("ssh projet {} {}", p.host, p.path),
+                action: format!("sshproj:{}|{}", p.host, p.path),
+                copy: place,
+                weight: 18,
+                source: "toolbox",
+                module: Some("ssh"),
+            });
+        }
+        for (alias, target) in hosts {
             if vscode {
                 v.push(Item {
                     kind: "SSH",
@@ -450,11 +479,12 @@ pub fn search(q: &str, settings: &Settings, projects: &[crate::projects::Project
         scored.retain(|(base, _, _)| *base >= 300);
     }
     scored.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.2.title.len().cmp(&b.2.title.len())));
-    // Une même cible ne sort qu'une fois (une appli présente deux fois dans le menu Démarrer…).
+    // Une même cible ne sort qu'une fois (une appli présente deux fois dans le menu Démarrer…),
+    // mais un projet peut porter le nom d'un serveur.
     let mut seen = std::collections::HashSet::new();
     scored
         .into_iter()
-        .filter(|(_, _, it)| seen.insert(fold(&it.title)))
+        .filter(|(_, _, it)| seen.insert((it.kind, fold(&it.title))))
         .take(MAX_RESULTS)
         .map(|(_, _, it)| to_result(it))
         .collect()

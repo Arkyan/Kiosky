@@ -902,6 +902,11 @@ async fn ssh_connect(alias: String, vscode: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn ssh_open_project(host: String, path: String, vscode: bool) -> Result<(), String> {
+    blocking(move || ssh::open_project(&host, &path, vscode)).await
+}
+
+#[tauri::command]
 async fn ssh_keygen(name: String, comment: String, passphrase: bool) -> Result<(), String> {
     blocking(move || ssh::keygen(&name, &comment, passphrase)).await
 }
@@ -1141,6 +1146,11 @@ async fn run_action(app: AppHandle, state: State<'_, AppState>, action: String) 
         }
         "ssh" => blocking(move || ssh::connect(&arg, false)).await?,
         "sshcode" => blocking(move || ssh::connect(&arg, true)).await?,
+        "sshproj" | "sshprojcode" => {
+            let (host, path) = arg.split_once('|').ok_or("Action invalide")?;
+            let (host, path, vscode) = (host.to_string(), path.to_string(), verb == "sshprojcode");
+            blocking(move || ssh::open_project(&host, &path, vscode)).await?
+        }
         "page" => {
             show_main(&app);
             let _ = app.emit_to("main", "navigate", arg.clone());
@@ -1565,6 +1575,7 @@ fn main() {
             save_ssh,
             undo_ssh,
             ssh_connect,
+            ssh_open_project,
             ssh_keygen,
             ssh_send_key,
             ssh_forget,

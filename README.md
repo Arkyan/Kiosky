@@ -5,12 +5,12 @@ Rust + Tauri 2 pour la logique, Svelte 5 pour l'interface (style Windows 11, Mic
 
 | Module | Ce qu'il fait |
 |---|---|
-| **Palette** | Raccourci global (`Ctrl+Shift+Space` par défaut) : recherche façon menu Démarrer (applications, projets, dossiers, Paramètres Windows, outils système, verrouiller/veille/redémarrer, pages de Kiosky) qui apprend de tes habitudes, plus calculs, unités, devises, fuseaux, encodages `kill 3000` / `port 3000`, `ip` (adresses locale et publique), le nom d'un serveur SSH pour s'y connecter (terminal ou VS Code), recherche web (`g`, `yt`, `gh`, `mdn`, `npm`, `crates`, `so`, `wiki`…) commandes `>ipconfig` avec la sortie affichée, et un assistant (`? ta question`, ou le bouton à gauche du champ) : Claude ou Gemini avec ta clé API, en conversation, avec des actions sur le texte copié (corriger, traduire, résumer, expliquer, reformuler) |
+| **Palette** | Raccourci global (`Ctrl+Shift+Space` par défaut) : recherche façon menu Démarrer (applications, projets, dossiers, Paramètres Windows, outils système, verrouiller/veille/redémarrer, pages de Kiosky) qui apprend de tes habitudes, plus calculs, unités, devises, fuseaux, encodages `kill 3000` / `port 3000`, `ip` (adresses locale et publique), le nom d'un serveur SSH pour s'y connecter (terminal ou VS Code) ou d'un projet SSH pour l'ouvrir directement dans son dossier, recherche web (`g`, `yt`, `gh`, `mdn`, `npm`, `crates`, `so`, `wiki`…) commandes `>ipconfig` avec la sortie affichée, et un assistant (`? ta question`, ou le bouton à gauche du champ) : Claude ou Gemini avec ta clé API, en conversation, avec des actions sur le texte copié (corriger, traduire, résumer, expliquer, reformuler) |
 | **Expanseur de texte** | `;mail` → ton adresse, `;sig` → ta signature, `;date` → la date du jour, dans toutes les applications |
 | **Pipette** | Raccourci global (`Win+Shift+C` par défaut) : loupe sous la souris, clic = couleur copiée en HEX, RGB ou HSL, historique |
 | **Projets** | Détecte les projets (Git, Node, Rust, PHP, .NET, Android…), branche et modifications non commitées, ouverture dans l'éditeur adapté |
 | **Dossiers** | Un raccourci global par dossier favori (`Ctrl+Shift+1`…), ouvert dans l'Explorateur, le terminal ou un éditeur |
-| **SSH** | Serveurs du fichier `~/.ssh/config` : ajouter, modifier (adresse, utilisateur, port, clé, autres options), supprimer, se connecter dans un terminal ou ouvrir le serveur dans VS Code (extension Remote - SSH), annuler la dernière modification, oublier l'empreinte d'un serveur réinstallé. Clés : création (ED25519), copie de la clé publique, envoi sur un serveur. Tunnels : un port du serveur amené sur `localhost`, ouverts et fermés d'un clic |
+| **SSH** | Serveurs du fichier `~/.ssh/config` : ajouter, modifier (adresse, utilisateur, port, clé, autres options), supprimer, se connecter dans un terminal ou ouvrir le serveur dans VS Code (extension Remote - SSH), annuler la dernière modification, oublier l'empreinte d'un serveur réinstallé. Clés : création (ED25519), copie de la clé publique, envoi sur un serveur. Projets : un dossier d'un serveur (`/root/citesco` sur `raildle`), ouvert directement dans un terminal ou VS Code, depuis la page ou la palette, en une seule connexion. Tunnels : un port du serveur amené sur `localhost`, ouverts et fermés d'un clic |
 | **Outils dev** | Node, Python, Rust, Go, Java, Git, Docker… : ce qui est installé, la version, l'emplacement trouvé par le PATH, les exemplaires en double, et les mises à jour disponibles (winget, rustup) |
 | **Variables** | PATH et variables utilisateur/système : chemins introuvables et doublons signalés, réordonnancement, annulation de la dernière modification |
 | **Conteneurs** | Distributions WSL (terminal, fichiers, démarrer/arrêter, par défaut) et conteneurs Docker groupés par projet compose (démarrer, arrêter, journaux, terminal, ports), lancement de Docker Desktop |
@@ -98,7 +98,7 @@ src-tauri/src/
   monitor.rs             CPU / GPU / RAM / réseau / disques
   cleaner.rs             Nettoyage (ne suit jamais les liens ni les jonctions)
   ports.rs               Tables TCP/UDP (IP Helper) et arrêt de processus
-  ssh.rs                 Fichier ~/.ssh/config (commentaires et mise en forme conservés), clés, connexion, tunnels
+  ssh.rs                 Fichier ~/.ssh/config (commentaires et mise en forme conservés), clés, connexion, projets distants, tunnels
   locks.rs               Programmes qui tiennent un fichier (Gestionnaire de redémarrage de Windows)
   devtools.rs            Outils de développement du PATH et leurs versions
   network.rs             Cartes réseau (IP Helper), adresse publique et test de débit (Cloudflare), DNS, fichier hosts

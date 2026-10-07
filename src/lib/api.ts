@@ -39,6 +39,7 @@ export type Settings = {
   project_favorites: string[];
   project_opened: Record<string, number>;
   ssh_tunnels: SshTunnel[];
+  ssh_projects: SshProject[];
 };
 export type Project = {
   name: string;
@@ -149,6 +150,7 @@ export type DevTool = {
   winget: string[];
 };
 export type DevToolUpdate = { id: string; available: string; command: string };
+export type SshProject = { name: string; host: string; path: string };
 export type SshTunnel = { host: string; local_port: number; remote_host: string; remote_port: number };
 export type SshLine = { raw: string; key: string; value: string };
 export type SshBlock = { before: string[]; header: string; kind: "host" | "match" | "global"; patterns: string; lines: SshLine[] };
@@ -269,6 +271,7 @@ export const api = {
   saveSsh: (blocks: SshBlock[], stamp: string) => invoke<void>("save_ssh", { blocks, stamp }),
   undoSsh: () => invoke<void>("undo_ssh"),
   sshConnect: (alias: string, vscode = false) => invoke<void>("ssh_connect", { alias, vscode }),
+  sshOpenProject: (p: SshProject, vscode = false) => invoke<void>("ssh_open_project", { host: p.host, path: p.path, vscode }),
 
   sshKeygen: (name: string, comment: string, passphrase: boolean) => invoke<void>("ssh_keygen", { name, comment, passphrase }),
   sshSendKey: (key: string, alias: string) => invoke<void>("ssh_send_key", { key, alias }),
